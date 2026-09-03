@@ -1,56 +1,10 @@
-import type { Candle, Trade } from "@orderflow/domain";
+import type { Candle, Trade,FootprintCandle } from "@orderflow/domain";
 import { BitgetMarketDataProvider } from "@orderflow/market-data";
 import { getMarket } from "@orderflow/markets";
-import {getCandleStartTime, getCandleEndTime,createCandle, updateCandle, CandleBuilder} from "@orderflow/domain";
-
-// const candleStart = new Date("2026-09-03T12:00:00.000Z").getTime();
-
-// const trade1: Trade = {
-//   id: "trade-1",
-//   exchange: "BITGET",
-//   marketId: "bitget-btc-usdt",
-//   symbol: "BTCUSDT",
-//   timestamp: candleStart,
-//   price: 30_000,
-//   quantity: 0.5,
-//   side: "BUY"
-// };
-
-// const trade2: Trade = {
-//   id: "trade-2",
-//   exchange: "BITGET",
-//   marketId: "bitget-btc-usdt",
-//   symbol: "BTCUSDT",
-//   timestamp: candleStart + 30_000,
-//   price: 30_100,
-//   quantity: 0.3,
-//   side: "BUY"
-// };
-
-// const trade3: Trade = {
-//   id: "trade-3",
-//   exchange: "BITGET",
-//   marketId: "bitget-btc-usdt",
-//   symbol: "BTCUSDT",
-//   timestamp: candleStart + 60_000,
-//   price: 30_050,
-//   quantity: 0.2,
-//   side: "SELL"
-// };
-
-// const builder = new CandleBuilder("bitget-btc-usdt", "1m");
-// const result1 = builder.addTrade(trade1);
-
-// console.log("Result 1:", result1);
-
-// const result2 = builder.addTrade(trade2);
-
-// console.log("Result 2:", result2);
-
-// const result3 = builder.addTrade(trade3);
-
-// console.log("Result 3:", result3);
-
+import {getCandleStartTime, getCandleEndTime,createCandle, updateCandle, CandleBuilder,
+  getPriceLevel, createFootprintLevel, updateFootprintLevel, createFootprintCandle,
+  updateFootprintCandle, FootprintCandleBuilder
+} from "@orderflow/domain";
 
 
 const marketId = process.env.MARKET_ID ?? "bitget-btc-usdt";
@@ -77,6 +31,92 @@ function printCandle(candle: Candle): void {
   console.log(`${startTime}  ${endTime}  ${open}  ${high}  ${low}  ${close}  ${volume}  ${tradeCount}`);
 }
 
+function printFootprintCandle(candle: FootprintCandle): void {
+  const priceDecimals = market.display.priceDecimals;
+  const quantityDecimals = market.display.quantityDecimals;
+
+  const startTime = new Date(candle.startTime)
+    .toISOString()
+    .slice(11, 23);
+
+  const endTime = new Date(candle.endTime)
+    .toISOString()
+    .slice(11, 23);
+
+  const open = candle.open
+    .toFixed(priceDecimals)
+    .padStart(12);
+
+  const high = candle.high
+    .toFixed(priceDecimals)
+    .padStart(12);
+
+  const low = candle.low
+    .toFixed(priceDecimals)
+    .padStart(12);
+
+  const close = candle.close
+    .toFixed(priceDecimals)
+    .padStart(12);
+
+  const volume = candle.volume
+    .toFixed(quantityDecimals)
+    .padStart(10);
+
+  const tradeCount = candle.tradeCount
+    .toString()
+    .padStart(6);
+
+  const totalBidVolume = [...candle.levels.values()].reduce((sum, level) => sum + level.bidVolume, 0);
+  const totalAskVolume = [...candle.levels.values()].reduce((sum, level) => sum + level.askVolume, 0);
+  const totalDelta = totalAskVolume - totalBidVolume;
+
+  console.log("\nFOOTPRINT CANDLE");
+  console.log(
+    `${startTime} - ${endTime} | ` +
+    `O: ${open} H: ${high} L: ${low} C: ${close} ` +
+    `V: ${volume} Trades: ${tradeCount}`
+  );
+
+  console.log("       PRICE |        BID |        ASK |      DELTA | TRADES");
+  console.log("-------------|------------|------------|------------|-------");
+
+  const sortedLevels = [...candle.levels.values()].sort(
+    (a, b) => b.price - a.price
+  );
+
+  for (const level of sortedLevels) {
+    const price = level.price
+      .toFixed(priceDecimals)
+      .padStart(12);
+
+    const bidVolume = level.bidVolume
+      .toFixed(quantityDecimals)
+      .padStart(11);
+
+    const askVolume = level.askVolume
+      .toFixed(quantityDecimals)
+      .padStart(11);
+
+    const delta = (level.askVolume - level.bidVolume)
+      .toFixed(quantityDecimals)
+      .padStart(11);
+
+    const levelTradeCount = level.tradeCount
+      .toString()
+      .padStart(6);
+
+    console.log(
+      `${price} |${bidVolume} |${askVolume} |${delta} |${levelTradeCount}`
+    );  
+  }
+  console.log(
+  `Total Bid: ${totalBidVolume.toFixed(quantityDecimals)} | ` +
+  `Total Ask: ${totalAskVolume.toFixed(quantityDecimals)} | ` +
+  `Delta: ${totalDelta.toFixed(quantityDecimals)}`
+);
+}
+
 async function shutdown(signal: string): Promise<void> {
   console.log(`\n${signal} received. Closing connection...`);
   await provider.disconnect();
@@ -90,16 +130,13 @@ console.log(`Connecting to Bitget for ${market.symbol}...`);
 await provider.connect();
 
 const candleBuilder = new CandleBuilder(market.id, "1m");
-
+const footprintCandleBuilder = new FootprintCandleBuilder(market.id, "1m",0.1);
 function handleTrade(trade: Trade): void {
-  const result = candleBuilder.addTrade(trade);
+  const result = footprintCandleBuilder.addTrade(trade);
 
   if (result.completedCandle) {
-    printCandle(result.completedCandle);
+    printFootprintCandle(result.completedCandle);
   }
 }
 
-console.log(
-  "TIME RANGE                         OPEN          HIGH           LOW         CLOSE      VOLUME  TRADES"
-);
 await provider.subscribeTrades(market,handleTrade);

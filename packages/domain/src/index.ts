@@ -181,3 +181,157 @@ export class CandleBuilder {
     };
   }
 }
+
+export interface FootprintLevel {
+  readonly price: number;
+  readonly bidVolume: number;
+  readonly askVolume: number;
+  readonly tradeCount: number;
+}
+
+export interface FootprintCandle extends Candle {
+  readonly levels: ReadonlyMap<number, FootprintLevel>;
+}
+
+export function getPriceLevel(
+  price: number,
+  tickSize: number,
+):number{
+  if(!Number.isFinite(price) || !Number.isFinite(tickSize) || tickSize <= 0 || price <= 0){
+    throw new Error(`Invalid price ${price} or tickSize ${tickSize}`);
+  }
+  const level = Math.round(price / tickSize) * tickSize;
+  return Number(level.toFixed(8));
+}
+
+export function createFootprintLevel(
+  trade: Trade,
+  tickSize: number
+): FootprintLevel {
+  const priceLevel = getPriceLevel(trade.price, tickSize);
+  
+  return {
+    price: priceLevel,
+    bidVolume: trade.side === "SELL" ? trade.quantity : 0,
+    askVolume: trade.side === "BUY" ? trade.quantity : 0,
+    tradeCount: 1
+  };
+}
+
+export function updateFootprintLevel(
+  level: FootprintLevel,
+  trade: Trade,
+  tickSize: number
+): FootprintLevel {
+  const priceLevel = getPriceLevel(trade.price, tickSize);
+
+  if (priceLevel !== level.price) {
+    throw new Error(
+      `Trade price level ${priceLevel} does not match level price ${level.price}`
+    );
+  }
+
+  return {
+    ...level,
+    bidVolume:
+      level.bidVolume + (trade.side === "SELL" ? trade.quantity : 0),
+    askVolume:
+      level.askVolume + (trade.side === "BUY" ? trade.quantity : 0),
+    tradeCount: level.tradeCount + 1
+  };
+}
+
+export function createFootprintCandle(
+  trade: Trade,
+  timeFrame: TimeFrame,
+  tickSize: number
+): FootprintCandle {
+  const candle = createCandle(trade, timeFrame);
+  const level = createFootprintLevel(trade, tickSize);
+
+  return {
+    ...candle,
+    levels: new Map([[level.price, level]])
+  };
+}
+
+export function updateFootprintCandle(
+  candle: FootprintCandle,
+  trade: Trade,
+  tickSize: number
+): FootprintCandle {
+  const updatedCandle = updateCandle(candle, trade);
+
+  const priceLevel = getPriceLevel(trade.price, tickSize);
+  const existingLevel = candle.levels.get(priceLevel);
+
+  const updatedLevel = existingLevel
+    ? updateFootprintLevel(existingLevel, trade, tickSize)
+    : createFootprintLevel(trade, tickSize);
+
+  const updatedLevels = new Map(candle.levels);
+  updatedLevels.set(priceLevel, updatedLevel);
+
+  return {
+    ...updatedCandle,
+    levels: updatedLevels
+  };
+}
+
+export interface FootprintCandleBuilderResult {
+  readonly currentCandle: FootprintCandle;
+  readonly completedCandle?: FootprintCandle;
+}
+
+export class FootprintCandleBuilder {
+  private currentCandle: FootprintCandle | undefined;
+
+  constructor(
+    private readonly marketId: string,
+    private readonly timeFrame: TimeFrame,
+    private readonly tickSize: number
+  ) {
+    if (!Number.isFinite(tickSize) || tickSize <= 0) {
+      throw new Error(`Invalid tickSize: ${tickSize}`);
+    }
+  }
+  
+  public addTrade(trade: Trade): FootprintCandleBuilderResult {
+    if (trade.marketId !== this.marketId) {
+      throw new Error(
+        `Trade market ${trade.marketId} does not match builder market ${this.marketId}`
+      );
+    }
+
+    if (!this.currentCandle) {
+      this.currentCandle = createFootprintCandle(trade, this.timeFrame, this.tickSize);
+
+      return {
+        currentCandle: this.currentCandle
+      };
+    }
+
+    if (trade.timestamp < this.currentCandle.startTime) {
+      throw new Error(
+        `Out-of-order trade: timestamp ${trade.timestamp} is before ` +
+        `current candle start ${this.currentCandle.startTime}`
+      );
+    }
+
+    if (trade.timestamp >= this.currentCandle.endTime) {
+      const completedCandle = this.currentCandle;
+      this.currentCandle = createFootprintCandle(trade, this.timeFrame, this.tickSize);
+
+      return {
+        currentCandle: this.currentCandle,
+        completedCandle
+      };
+    }
+
+    this.currentCandle = updateFootprintCandle(this.currentCandle, trade, this.tickSize);
+
+    return {
+      currentCandle: this.currentCandle
+    };
+  }
+}
