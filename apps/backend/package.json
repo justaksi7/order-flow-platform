@@ -1,0 +1,18 @@
+{
+  "name": "@orderflow/backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -b",
+    "predev": "npm run build",
+    "dev": "tsx watch src/main.ts",
+    "start": "node dist/main.js"
+  },
+  "dependencies": {
+    "@orderflow/domain": "0.1.0",
+    "@orderflow/market-data": "0.1.0",
+    "@orderflow/markets": "0.1.0"
+  },
+  "devDependencies": { "tsx": "^4.20.0" }
+}
