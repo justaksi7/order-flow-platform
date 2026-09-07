@@ -1,21 +1,27 @@
-import type { FootprintCandle, FootprintLevel } from "./types.js";
+import type {
+  FootprintCandle,
+  FootprintLevel,
+  SerializedFootprintCandle
+} from "./types.js";
 
-interface SerializedFootprintCandle extends Omit<FootprintCandle, "levels"> {
-  readonly levels: readonly FootprintLevel[];
-}
-
-export function serializeFootprintCandle(candle: FootprintCandle): string {
-  const serializable: SerializedFootprintCandle = {
+export function serializeFootprintCandle(
+  candle: FootprintCandle
+): SerializedFootprintCandle {
+  return {
     ...candle,
-    levels: [...candle.levels.values()]
+    levels: [...candle.levels.values()].sort((a, b) => a.price - b.price)
   };
-  return JSON.stringify(serializable);
 }
 
-export function deserializeFootprintCandle(serialized: string): FootprintCandle {
-  const parsed = JSON.parse(serialized) as SerializedFootprintCandle;
-  if (!Array.isArray(parsed.levels)) {
-    throw new Error("Serialized footprint candle must contain a levels array");
+export function deserializeFootprintCandle(
+  candle: SerializedFootprintCandle
+): FootprintCandle {
+  const levels = new Map<number, FootprintLevel>();
+  for (const level of candle.levels) {
+    if (levels.has(level.price)) {
+      throw new Error(`Duplicate footprint level price: ${level.price}`);
+    }
+    levels.set(level.price, level);
   }
-  return { ...parsed, levels: new Map(parsed.levels.map((level) => [level.price, level])) };
+  return { ...candle, levels };
 }

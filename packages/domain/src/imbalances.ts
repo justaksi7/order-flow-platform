@@ -1,64 +1,135 @@
-import type { FootprintCandle, Imbalance, StackedImbalance } from "./types.js";
+import { getPriceLevel } from "./candles.js";
+import type {
+  FootprintCandle,
+  FootprintCandleAnalysis,
+  FootprintImbalance,
+  StackedImbalance
+} from "./types.js";
 
-export interface ImbalanceOptions {
-  readonly ratio?: number;
-  readonly minimumVolume?: number;
+export function isVolumeImbalance(
+  dominantVolume: number,
+  comparedVolume: number,
+  minimumRatio = 3
+): boolean {
+  if (
+    !Number.isFinite(dominantVolume) ||
+    !Number.isFinite(comparedVolume) ||
+    dominantVolume < 0 ||
+    comparedVolume < 0
+  ) {
+    throw new Error("Volumes must be finite and non-negative");
+  }
+  if (!Number.isFinite(minimumRatio) || minimumRatio <= 1) {
+    throw new Error("Minimum imbalance ratio must be greater than 1");
+  }
+  if (dominantVolume === 0) return false;
+  if (comparedVolume === 0) return true;
+  return dominantVolume / comparedVolume >= minimumRatio;
 }
 
-export function calculateImbalances(
+export function findDiagonalImbalances(
   candle: FootprintCandle,
-  options: ImbalanceOptions = {}
-): readonly Imbalance[] {
-  const ratio = options.ratio ?? 3;
-  const minimumVolume = options.minimumVolume ?? 0;
-  const result: Imbalance[] = [];
+  tickSize: number,
+  minimumRatio = 3
+): readonly FootprintImbalance[] {
+  if (!Number.isFinite(tickSize) || tickSize <= 0) {
+    throw new Error("Tick size must be finite and greater than 0");
+  }
+  const result: FootprintImbalance[] = [];
   for (const level of candle.levels.values()) {
-    const { bidVolume, askVolume } = level;
-    if (askVolume >= minimumVolume && askVolume > bidVolume * ratio) {
+    const lower = candle.levels.get(getPriceLevel(level.price - tickSize, tickSize));
+    const upper = candle.levels.get(getPriceLevel(level.price + tickSize, tickSize));
+    if (lower && isVolumeImbalance(level.askVolume, lower.bidVolume, minimumRatio)) {
       result.push({
         price: level.price,
-        side: "ASK",
-        ratio: bidVolume === 0 ? Number.POSITIVE_INFINITY : askVolume / bidVolume,
-        dominantVolume: askVolume,
-        opposingVolume: bidVolume
+        side: "BUY",
+        dominantVolume: level.askVolume,
+        comparedVolume: lower.bidVolume,
+        ratio: lower.bidVolume === 0 ? Infinity : level.askVolume / lower.bidVolume
       });
-    } else if (bidVolume >= minimumVolume && bidVolume > askVolume * ratio) {
+    }
+    if (upper && isVolumeImbalance(level.bidVolume, upper.askVolume, minimumRatio)) {
       result.push({
         price: level.price,
-        side: "BID",
-        ratio: askVolume === 0 ? Number.POSITIVE_INFINITY : bidVolume / askVolume,
-        dominantVolume: bidVolume,
-        opposingVolume: askVolume
+        side: "SELL",
+        dominantVolume: level.bidVolume,
+        comparedVolume: upper.askVolume,
+        ratio: upper.askVolume === 0 ? Infinity : level.bidVolume / upper.askVolume
       });
     }
   }
   return result;
 }
 
-export const calculateDiagonalImbalances = calculateImbalances;
-
 export function findStackedImbalances(
-  imbalances: readonly Imbalance[],
-  minimumStackSize = 3
+  imbalances: readonly FootprintImbalance[],
+  tickSize: number,
+  minimumLevels = 3
 ): readonly StackedImbalance[] {
+  if (!Number.isFinite(tickSize) || tickSize <= 0) {
+    throw new Error("Tick size must be finite and greater than 0");
+  }
+  if (!Number.isInteger(minimumLevels) || minimumLevels < 2) {
+    throw new Error("Minimum levels must be an integer of at least 2");
+  }
   const result: StackedImbalance[] = [];
-  for (const side of ["BID", "ASK"] as const) {
+  for (const side of ["BUY", "SELL"] as const) {
     const sorted = imbalances
       .filter((imbalance) => imbalance.side === side)
       .sort((a, b) => a.price - b.price);
-    let stack: Imbalance[] = [];
+    let stack: FootprintImbalance[] = [];
+    const complete = (): void => {
+      if (stack.length < minimumLevels) return;
+      const first = stack[0];
+      const last = stack[stack.length - 1];
+      if (first && last) {
+        result.push({
+          side,
+          lowPrice: first.price,
+          highPrice: last.price,
+          imbalances: [...stack]
+        });
+      }
+    };
     for (const imbalance of sorted) {
       const previous = stack[stack.length - 1];
-      if (previous && imbalance.price > previous.price) {
-        stack.push(imbalance);
-      } else {
-        if (stack.length >= minimumStackSize) result.push({ side, imbalances: stack });
+      const expected = previous
+        ? getPriceLevel(previous.price + tickSize, tickSize)
+        : undefined;
+      if (previous && imbalance.price !== expected) {
+        complete();
         stack = [imbalance];
+      } else {
+        stack.push(imbalance);
       }
     }
-    if (stack.length >= minimumStackSize) result.push({ side, imbalances: stack });
+    complete();
   }
   return result;
 }
 
-export const calculateStackedImbalances = findStackedImbalances;
+export function analyzeFootprintCandle(
+  candle: FootprintCandle,
+  tickSize: number,
+  minimumImbalanceRatio = 3,
+  minimumStackedLevels = 3
+): FootprintCandleAnalysis {
+  let bidVolume = 0;
+  let askVolume = 0;
+  for (const level of candle.levels.values()) {
+    bidVolume += level.bidVolume;
+    askVolume += level.askVolume;
+  }
+  const imbalances = findDiagonalImbalances(candle, tickSize, minimumImbalanceRatio);
+  return {
+    bidVolume,
+    askVolume,
+    delta: askVolume - bidVolume,
+    imbalances,
+    stackedImbalances: findStackedImbalances(
+      imbalances,
+      tickSize,
+      minimumStackedLevels
+    )
+  };
+}

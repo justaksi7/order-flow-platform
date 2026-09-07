@@ -80,22 +80,35 @@ export interface VolumeProfile {
 }
 
 export interface CumulativeDeltaPoint {
-  readonly timestamp: number;
+  readonly startTime: number;
+  readonly endTime: number;
   readonly delta: number;
   readonly cumulativeDelta: number;
 }
 
-export type ImbalanceSide = "BID" | "ASK";
-
-export interface Imbalance {
+export interface FootprintImbalance {
   readonly price: number;
-  readonly side: ImbalanceSide;
-  readonly ratio: number;
+  readonly side: "BUY" | "SELL";
   readonly dominantVolume: number;
-  readonly opposingVolume: number;
+  readonly comparedVolume: number;
+  readonly ratio: number;
 }
 
 export interface StackedImbalance {
-  readonly side: ImbalanceSide;
-  readonly imbalances: readonly Imbalance[];
+  readonly side: "BUY" | "SELL";
+  readonly lowPrice: number;
+  readonly highPrice: number;
+  readonly imbalances: readonly FootprintImbalance[];
 }
+
+export interface FootprintCandleAnalysis {
+  readonly bidVolume: number;
+  readonly askVolume: number;
+  readonly delta: number;
+  readonly imbalances: readonly FootprintImbalance[];
+  readonly stackedImbalances: readonly StackedImbalance[];
+}
+
+export type SerializedFootprintCandle = Omit<FootprintCandle, "levels"> & {
+  readonly levels: readonly FootprintLevel[];
+};
