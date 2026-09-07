@@ -1,11 +1,9 @@
-import type { FootprintCandle } from "@orderflow/domain";
+import type { FootprintCandle } from "./types.js";
 
 export class FootprintCandleBuffer {
   private readonly candles: FootprintCandle[] = [];
 
-  constructor(
-    private readonly capacity: number
-  ) {
+  constructor(private readonly capacity: number) {
     if (!Number.isInteger(capacity) || capacity <= 0) {
       throw new Error(`Invalid capacity: ${capacity}`);
     }
@@ -13,10 +11,7 @@ export class FootprintCandleBuffer {
 
   public add(candle: FootprintCandle): void {
     this.candles.push(candle);
-
-    if (this.candles.length > this.capacity) {
-      this.candles.shift();
-    }
+    if (this.candles.length > this.capacity) this.candles.shift();
   }
 
   public getAll(): readonly FootprintCandle[] {
