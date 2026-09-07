@@ -15,6 +15,11 @@ import {
 
 import { getMarket } from "@orderflow/markets";
 
+import {createWebSocketServer} from "../src/websocket/createWebSocketServer.js";
+
+const WEB_SOCKET_PORT = 8080;
+
+
 const BUFFER_CAPACITY = 1_440;
 const FOOTPRINT_TICK_SIZE = 0.1;
 
@@ -217,6 +222,8 @@ process.once(
 );
 
 async function main(): Promise<void> {
+
+  createWebSocketServer(WEB_SOCKET_PORT);
   console.log(
     `Connecting to Bitget for ${market.symbol}...`
   );
