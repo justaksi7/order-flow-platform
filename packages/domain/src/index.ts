@@ -42,6 +42,7 @@ export interface Candle {
   readonly low: number;
   readonly close: number;
   readonly volume: number;
+  readonly quoteVolume: number;
   readonly tradeCount: number;
 }
 
@@ -98,6 +99,7 @@ export function createCandle(
     low: trade.price,
     close: trade.price,
     volume: trade.quantity,
+    quoteVolume: trade.price * trade.quantity,
     tradeCount: 1
   };
 }
@@ -125,6 +127,7 @@ export function updateCandle(candle: Candle, trade: Trade): Candle {
     low: Math.min(candle.low, trade.price),
     close: trade.price,
     volume: candle.volume + trade.quantity,
+    quoteVolume: candle.quoteVolume + trade.price * trade.quantity,
     tradeCount: candle.tradeCount + 1
   };
 }
@@ -334,4 +337,117 @@ export class FootprintCandleBuilder {
       currentCandle: this.currentCandle
     };
   }
+}
+
+export function getCandleVwap(candle: Candle): number {
+  if (!Number.isFinite(candle.volume) || candle.volume <= 0) {
+    throw new Error(
+      `Cannot calculate VWAP with volume ${candle.volume}`
+    );
+  }
+
+  if (!Number.isFinite(candle.quoteVolume)) {
+    throw new Error(
+      `Invalid quoteVolume ${candle.quoteVolume}`
+    );
+  }
+
+  return candle.quoteVolume / candle.volume;
+}
+
+export function aggregateFootprintCandles(
+  candles: readonly FootprintCandle[],
+  targetTimeFrame: TimeFrame
+): FootprintCandle {
+  if (candles.length === 0) {
+    throw new Error("Cannot aggregate an empty candle list");
+  }
+
+  const firstCandle = candles[0];
+  const lastCandle = candles[candles.length - 1];
+
+  if (!firstCandle || !lastCandle) {
+    throw new Error("Cannot aggregate an empty candle list");
+  }
+  for (let index = 1; index < candles.length; index++) {
+  const previousCandle = candles[index - 1];
+  const currentCandle = candles[index];
+
+  if (!previousCandle || !currentCandle) {
+    continue;
+  }
+
+  if (currentCandle.startTime <= previousCandle.startTime) {
+    throw new Error(
+      "Candles must be provided in chronological order"
+    );
+  }
+}
+const targetStartTime = getCandleStartTime(
+  firstCandle.startTime,
+  targetTimeFrame
+);
+
+const targetEndTime = getCandleEndTime(
+  firstCandle.startTime,
+  targetTimeFrame
+);
+for (const candle of candles) {
+  if (candle.marketId !== firstCandle.marketId) {
+    throw new Error(
+      `Candle market ${candle.marketId} does not match first candle market ${firstCandle.marketId}`
+    );
+  }
+
+  if (
+    candle.startTime < targetStartTime ||
+    candle.endTime > targetEndTime
+  ) {
+    throw new Error(
+      `Candle time range [${candle.startTime}, ${candle.endTime}) is outside the target time range ` +
+      `[${targetStartTime}, ${targetEndTime})`
+    );
+}
+}
+const high = Math.max(...candles.map(c => c.high));
+const low = Math.min(...candles.map(c => c.low));
+const volume = candles.reduce((sum, c) => sum + c.volume, 0);
+const quoteVolume = candles.reduce((sum, c) => sum + c.quoteVolume, 0);
+const tradeCount = candles.reduce((sum, c) => sum + c.tradeCount, 0);
+
+const levels = new Map<number, FootprintLevel>();
+
+for (const candle of candles) {
+  for (const level of candle.levels.values()) {
+    const existingLevel = levels.get(level.price);
+
+    if (existingLevel) {
+      levels.set(level.price, {
+        price: level.price,
+        bidVolume:
+          existingLevel.bidVolume + level.bidVolume,
+        askVolume:
+          existingLevel.askVolume + level.askVolume,
+        tradeCount:
+          existingLevel.tradeCount + level.tradeCount
+      });
+    } else {
+      levels.set(level.price, level);
+    }
+  }
+}
+return {
+  marketId: firstCandle.marketId,
+  timeFrame: targetTimeFrame,
+  startTime: targetStartTime,
+  endTime: targetEndTime,
+  open: firstCandle.open,
+  high,
+  low,
+  close: lastCandle.close,
+  volume,
+  quoteVolume,
+  tradeCount,
+  levels
+}
 }
