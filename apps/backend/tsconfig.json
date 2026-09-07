@@ -1,7 +1,7 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": { "rootDir": "src", "outDir": "dist", "tsBuildInfoFile": "dist/.tsbuildinfo" },
-  "include": ["src/**/*.ts"],
+  "include": ["src/**/*.ts", "../../packages/domain/src/FootprintCandleBuffer.ts"],
   "references": [
     { "path": "../../packages/domain" },
     { "path": "../../packages/markets" },

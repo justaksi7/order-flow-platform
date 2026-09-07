@@ -408,6 +408,12 @@ for (const candle of candles) {
       `[${targetStartTime}, ${targetEndTime})`
     );
 }
+  if (candle.timeFrame !== firstCandle.timeFrame) {
+    throw new Error(
+      `Candle timeframe ${candle.timeFrame} does not match ` +
+      `source timeframe ${firstCandle.timeFrame}`
+    );
+  }
 }
 const high = Math.max(...candles.map(c => c.high));
 const low = Math.min(...candles.map(c => c.low));
@@ -449,5 +455,622 @@ return {
   quoteVolume,
   tradeCount,
   levels
+};
 }
+
+export function aggregateByTimeFrame(
+  candles: readonly FootprintCandle[],
+  targetTimeFrame: TimeFrame
+): readonly FootprintCandle[] {
+  if (candles.length === 0) {
+    return [];
+  }
+
+  const firstCandle = candles[0];
+
+  if (!firstCandle) {
+    return [];
+  }
+
+  const sourceDuration =
+    TIME_FRAME_DURATION_MS[firstCandle.timeFrame];
+
+  const targetDuration =
+    TIME_FRAME_DURATION_MS[targetTimeFrame];
+
+  // 1. Prüfen, ob targetDuration mindestens sourceDuration ist
+    if (targetDuration < sourceDuration) {
+    throw new Error(
+      `Target timeframe ${targetTimeFrame} is smaller than source timeframe ${firstCandle.timeFrame}`
+    );
+  } 
+
+  // 2. Prüfen, ob targetDuration durch sourceDuration teilbar ist
+  if (targetDuration % sourceDuration !== 0) {
+    throw new Error(
+      `Target timeframe ${targetTimeFrame} is not a multiple of source timeframe ${firstCandle.timeFrame}`
+    );
+  }
+
+  const groups = new Map<number, FootprintCandle[]>();
+
+  for (const candle of candles) {
+
+      if (candle.marketId !== firstCandle.marketId) {
+        throw new Error(
+          `Candle market ${candle.marketId} does not match ` +
+          `source market ${firstCandle.marketId}`
+      );
+    }
+    // 3. Prüfen, ob jede Candle denselben Quell-Timeframe hat
+    if (candle.timeFrame !== firstCandle.timeFrame) {
+      throw new Error(
+        `Candle timeframe ${candle.timeFrame} does not match source timeframe ${firstCandle.timeFrame}`
+      );
+    }
+
+    const groupStartTime = getCandleStartTime(
+      candle.startTime,
+      targetTimeFrame
+    );
+
+    const existingGroup = groups.get(groupStartTime);
+
+    if (existingGroup) {
+      // 4. Candle zur vorhandenen Gruppe hinzufügen
+      existingGroup.push(candle);
+    } else {
+      // 5. Neue Gruppe erstellen
+      groups.set(groupStartTime, [candle]);
+    }
+  }
+
+  const aggregatedCandles: FootprintCandle[] = [];
+
+  for (const group of groups.values()) {
+    // 6. Gruppe mit aggregateFootprintCandles() aggregieren
+    const aggregatedCandle = aggregateFootprintCandles(
+      group,
+      targetTimeFrame
+    );
+    // 7. Ergebnis in aggregatedCandles einfügen
+    aggregatedCandles.push(aggregatedCandle); 
+  }
+
+  return aggregatedCandles;
+}
+
+export function calculateVolumeProfile(
+  candles: readonly FootprintCandle[]
+): ReadonlyMap<number, FootprintLevel> {
+  // deine Implementierung
+  const profile = new Map<number, FootprintLevel>();
+
+  for(const candle of candles){
+    for(const level of candle.levels.values()){
+      const existingLevel = profile.get(level.price);
+      if(existingLevel){
+        profile.set(level.price, {
+          price: level.price,
+          bidVolume: existingLevel.bidVolume + level.bidVolume,
+          askVolume: existingLevel.askVolume + level.askVolume,
+          tradeCount: existingLevel.tradeCount + level.tradeCount
+        });
+      } else {
+        profile.set(level.price, level);
+      }
+    }
+  }
+
+  return profile;
+}
+
+export function getPointOfControl(
+  profile: ReadonlyMap<number, FootprintLevel>
+): FootprintLevel | undefined {
+  let pointOfControl: FootprintLevel | undefined;
+  let highestVolume = -Infinity;
+
+  for (const level of profile.values()) {
+    const totalVolume =
+      level.bidVolume + level.askVolume;
+
+    if (totalVolume > highestVolume) {
+      highestVolume = totalVolume;
+      pointOfControl = level;
+    }
+  }
+
+  return pointOfControl;
+}
+
+export function calculateProfileDelta(
+  profile: ReadonlyMap<number, FootprintLevel>
+): number {
+  let delta = 0;
+
+  for (const level of profile.values()) {
+    // Delta dieses Levels zum Gesamtergebnis addieren
+    delta += level.askVolume - level.bidVolume;
+  }
+
+  return delta;
+}
+
+export function getLevelVolume(
+  level: FootprintLevel
+): number {
+  return level.bidVolume + level.askVolume;
+}
+
+export function getProfileVolume(
+  profile: ReadonlyMap<number, FootprintLevel>
+): number {
+  let totalVolume = 0;
+
+  for (const level of profile.values()) {
+    totalVolume += getLevelVolume(level);
+  }
+
+  return totalVolume;
+}
+
+export interface ValueArea {
+  readonly valueAreaHigh: number;
+  readonly valueAreaLow: number;
+  readonly pointOfControl: number;
+  readonly includedVolume: number;
+  readonly targetVolume: number;
+}
+
+export function calculateValueArea(
+  profile: ReadonlyMap<number, FootprintLevel>,
+  valueAreaPercentage = 0.7
+): ValueArea | undefined {
+  if (
+    valueAreaPercentage <= 0 ||
+    valueAreaPercentage > 1
+  ) {
+    throw new Error(
+      "Value area percentage must be greater than 0 and at most 1"
+    );
+  }
+
+  if (profile.size === 0) {
+    return undefined;
+  }
+
+  const pointOfControl = getPointOfControl(profile);
+
+  if (!pointOfControl) {
+    return undefined;
+  }
+
+  const levels = [...profile.values()].sort(
+    (first, second) => first.price - second.price
+  );
+
+  const pocIndex = levels.findIndex(
+    level => level.price === pointOfControl.price
+  );
+
+  if (pocIndex === -1) {
+    throw new Error("Point of Control is missing from profile");
+  }
+
+  const targetVolume =
+    getProfileVolume(profile) * valueAreaPercentage;
+
+  let lowIndex = pocIndex;
+  let highIndex = pocIndex;
+  let includedVolume = getLevelVolume(pointOfControl);
+
+  while (
+    includedVolume < targetVolume &&
+    (lowIndex > 0 || highIndex < levels.length - 1)
+  ) {
+    const lowerLevel = levels[lowIndex - 1];
+    const upperLevel = levels[highIndex + 1];
+
+    const lowerVolume = lowerLevel
+      ? getLevelVolume(lowerLevel)
+      : -Infinity;
+
+    const upperVolume = upperLevel
+      ? getLevelVolume(upperLevel)
+      : -Infinity;
+
+    // TODO:
+    // Wenn upperVolume größer oder gleich lowerVolume ist,
+    // obere Grenze erweitern.
+    // Andernfalls untere Grenze erweitern.
+    if (upperVolume >= lowerVolume) {
+      highIndex++;
+      includedVolume += upperVolume;
+    } else {
+      lowIndex--;
+      includedVolume += lowerVolume;
+    } 
+  }
+
+  const valueAreaLow = levels[lowIndex];
+  const valueAreaHigh = levels[highIndex];
+
+  if (!valueAreaLow || !valueAreaHigh) {
+    throw new Error("Could not determine value area boundaries");
+  }
+
+  return {
+    valueAreaHigh: valueAreaHigh.price,
+    valueAreaLow: valueAreaLow.price,
+    pointOfControl: pointOfControl.price,
+    includedVolume,
+    targetVolume
+  };
+}
+
+export interface VolumeProfileAnalysis {
+  readonly levels: ReadonlyMap<number, FootprintLevel>;
+  readonly totalVolume: number;
+  readonly delta: number;
+  readonly pointOfControl: FootprintLevel;
+  readonly valueAreaHigh: number;
+  readonly valueAreaLow: number;
+  readonly includedValueAreaVolume: number;
+  readonly targetValueAreaVolume: number;
+}
+
+export function analyzeVolumeProfile(
+  candles: readonly FootprintCandle[],
+  valueAreaPercentage = 0.7
+): VolumeProfileAnalysis | undefined {
+  const levels = calculateVolumeProfile(candles);
+
+  if (levels.size === 0) {
+    return undefined;
+  }
+
+  const pointOfControl = getPointOfControl(levels);
+  const valueArea = calculateValueArea(
+    levels,
+    valueAreaPercentage
+  );
+
+  if (!pointOfControl || !valueArea) {
+    return undefined;
+  }
+
+  return {
+    levels,
+    totalVolume: getProfileVolume(levels),
+    delta: calculateProfileDelta(levels),
+    pointOfControl,
+    valueAreaHigh: valueArea.valueAreaHigh,
+    valueAreaLow: valueArea.valueAreaLow,
+    includedValueAreaVolume:
+      valueArea.includedVolume,
+    targetValueAreaVolume:
+      valueArea.targetVolume
+  };
+}
+
+export function getCandleDelta(
+  candle: FootprintCandle
+): number {
+  let delta = 0;
+
+  for (const level of candle.levels.values()) {
+    delta += level.askVolume - level.bidVolume;
+  }
+
+  return delta;
+}
+
+export interface CumulativeDeltaPoint {
+  readonly startTime: number;
+  readonly endTime: number;
+  readonly delta: number;
+  readonly cumulativeDelta: number;
+}
+
+export function calculateCumulativeDelta(
+  candles: readonly FootprintCandle[],
+  initialDelta = 0
+): readonly CumulativeDeltaPoint[] {
+  let cumulativeDelta = initialDelta;
+
+  return candles.map(candle => {
+    const delta = getCandleDelta(candle);
+
+    cumulativeDelta += delta;
+
+    return {
+      startTime: candle.startTime,
+      endTime: candle.endTime,
+      delta,
+      cumulativeDelta
+    };
+  });
+}
+
+export function isVolumeImbalance(
+  dominantVolume: number,
+  comparedVolume: number,
+  minimumRatio = 3
+): boolean {
+  if (
+    !Number.isFinite(dominantVolume) ||
+    !Number.isFinite(comparedVolume) ||
+    dominantVolume < 0 ||
+    comparedVolume < 0
+  ) {
+    throw new Error(
+      "Volumes must be finite and non-negative"
+    );
+  }
+
+  if (
+    !Number.isFinite(minimumRatio) ||
+    minimumRatio <= 1
+  ) {
+    throw new Error(
+      "Minimum imbalance ratio must be greater than 1"
+    );
+  }
+
+  if (dominantVolume === 0) {
+    return false;
+  }
+
+  if (comparedVolume === 0) {
+    return true;
+  }
+
+  return dominantVolume / comparedVolume >= minimumRatio;
+}
+
+export interface FootprintImbalance {
+  readonly price: number;
+  readonly side: "BUY" | "SELL";
+  readonly dominantVolume: number;
+  readonly comparedVolume: number;
+  readonly ratio: number;
+}
+
+export function findDiagonalImbalances(
+  candle: FootprintCandle,
+  tickSize: number,
+  minimumRatio = 3
+): readonly FootprintImbalance[] {
+  if (!Number.isFinite(tickSize) || tickSize <= 0) {
+    throw new Error(
+      "Tick size must be finite and greater than 0"
+    );
+  }
+
+  const imbalances: FootprintImbalance[] = [];
+
+  for (const level of candle.levels.values()) {
+    const lowerPrice = getPriceLevel(
+      level.price - tickSize,
+      tickSize
+    );
+
+    const upperPrice = getPriceLevel(
+      level.price + tickSize,
+      tickSize
+    );
+
+    const lowerLevel = candle.levels.get(lowerPrice);
+    const upperLevel = candle.levels.get(upperPrice);
+
+    if (
+      lowerLevel &&
+      isVolumeImbalance(
+        level.askVolume,
+        lowerLevel.bidVolume,
+        minimumRatio
+      )
+    ) {
+      imbalances.push({
+        price: level.price,
+        side: "BUY",
+        dominantVolume: level.askVolume,
+        comparedVolume: lowerLevel.bidVolume,
+        ratio:
+          lowerLevel.bidVolume === 0
+            ? Infinity
+            : level.askVolume /
+              lowerLevel.bidVolume
+      });
+    }
+
+    if (
+      upperLevel &&
+      isVolumeImbalance(
+        level.bidVolume,
+        upperLevel.askVolume,
+        minimumRatio
+      )
+    ) {
+      imbalances.push({
+        price: level.price,
+        side: "SELL",
+        dominantVolume: level.bidVolume,
+        comparedVolume: upperLevel.askVolume,
+        ratio:
+          upperLevel.askVolume === 0
+            ? Infinity
+            : level.bidVolume /
+              upperLevel.askVolume
+      });
+    }
+  }
+
+  return imbalances;
+}
+
+export interface StackedImbalance {
+  readonly side: "BUY" | "SELL";
+  readonly lowPrice: number;
+  readonly highPrice: number;
+  readonly imbalances: readonly FootprintImbalance[];
+}
+
+export function findStackedImbalances(
+  imbalances: readonly FootprintImbalance[],
+  tickSize: number,
+  minimumLevels = 3
+): readonly StackedImbalance[] {
+  if (!Number.isFinite(tickSize) || tickSize <= 0) {
+    throw new Error(
+      "Tick size must be finite and greater than 0"
+    );
+  }
+
+  if (
+    !Number.isInteger(minimumLevels) ||
+    minimumLevels < 2
+  ) {
+    throw new Error(
+      "Minimum levels must be an integer of at least 2"
+    );
+  }
+
+  const result: StackedImbalance[] = [];
+
+  for (const side of ["BUY", "SELL"] as const) {
+    const sideImbalances = imbalances
+      .filter(imbalance => imbalance.side === side)
+      .sort((first, second) => first.price - second.price);
+
+    let currentStack: FootprintImbalance[] = [];
+
+    const completeStack = (): void => {
+      if (currentStack.length < minimumLevels) {
+        return;
+      }
+
+      const first = currentStack[0];
+      const last = currentStack[currentStack.length - 1];
+
+      if (!first || !last) {
+        return;
+      }
+
+      result.push({
+        side,
+        lowPrice: first.price,
+        highPrice: last.price,
+        imbalances: [...currentStack]
+      });
+    };
+
+    for (const imbalance of sideImbalances) {
+      const previous =
+        currentStack[currentStack.length - 1];
+
+      if (!previous) {
+        currentStack = [imbalance];
+        continue;
+      }
+
+      const expectedPrice = getPriceLevel(
+        previous.price + tickSize,
+        tickSize
+      );
+
+      if (imbalance.price === expectedPrice) {
+        currentStack.push(imbalance);
+      } else {
+        completeStack();
+        currentStack = [imbalance];
+      }
+    }
+
+    completeStack();
+  }
+
+  return result;
+}
+
+export interface FootprintCandleAnalysis {
+  readonly bidVolume: number;
+  readonly askVolume: number;
+  readonly delta: number;
+  readonly imbalances: readonly FootprintImbalance[];
+  readonly stackedImbalances:
+    readonly StackedImbalance[];
+}
+
+export function analyzeFootprintCandle(
+  candle: FootprintCandle,
+  tickSize: number,
+  minimumImbalanceRatio = 3,
+  minimumStackedLevels = 3
+): FootprintCandleAnalysis {
+  let bidVolume = 0;
+  let askVolume = 0;
+
+  for (const level of candle.levels.values()) {
+    bidVolume += level.bidVolume;
+    askVolume += level.askVolume;
+  }
+
+  const imbalances = findDiagonalImbalances(
+    candle,
+    tickSize,
+    minimumImbalanceRatio
+  );
+
+  const stackedImbalances = findStackedImbalances(
+    imbalances,
+    tickSize,
+    minimumStackedLevels
+  );
+
+  return {
+    bidVolume,
+    askVolume,
+    delta: askVolume - bidVolume,
+    imbalances,
+    stackedImbalances
+  };
+}
+
+export type SerializedFootprintCandle =
+  Omit<FootprintCandle, "levels"> & {
+    readonly levels: readonly FootprintLevel[];
+  };
+
+export function serializeFootprintCandle(
+  candle: FootprintCandle
+): SerializedFootprintCandle {
+  return {
+    ...candle,
+    levels: [...candle.levels.values()].sort(
+      (first, second) => first.price - second.price
+    )
+  };
+}
+
+export function deserializeFootprintCandle(
+  candle: SerializedFootprintCandle
+): FootprintCandle {
+  const levels = new Map<number, FootprintLevel>();
+
+  for (const level of candle.levels) {
+    if (levels.has(level.price)) {
+      throw new Error(
+        `Duplicate footprint level price: ${level.price}`
+      );
+    }
+
+    levels.set(level.price, level);
+  }
+
+  return {
+    ...candle,
+    levels
+  };
 }
