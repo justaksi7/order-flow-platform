@@ -9,7 +9,12 @@ export function calculateCumulativeDelta(
   return candles.map((candle) => {
     const delta = getCandleDelta(candle);
     cumulativeDelta += delta;
-    return { timestamp: candle.endTime, delta, cumulativeDelta };
+    return {
+      startTime: candle.startTime,
+      endTime: candle.endTime,
+      delta,
+      cumulativeDelta
+    };
   });
 }
 

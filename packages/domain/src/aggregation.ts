@@ -1,6 +1,18 @@
 import { getCandleEndTime, getCandleStartTime } from "./candles.js";
 import type { FootprintCandle, FootprintLevel, TimeFrame } from "./types.js";
 
+const TIME_FRAME_DURATION_MS: Record<TimeFrame, number> = {
+  "1m": 60_000,
+  "5m": 5 * 60_000,
+  "15m": 15 * 60_000,
+  "30m": 30 * 60_000,
+  "1h": 60 * 60_000,
+  "4h": 4 * 60 * 60_000,
+  "8h": 8 * 60 * 60_000,
+  "12h": 12 * 60 * 60_000,
+  "1d": 24 * 60 * 60_000
+};
+
 export function aggregateFootprintCandles(
   candles: readonly FootprintCandle[],
   targetTimeFrame: TimeFrame
@@ -71,6 +83,41 @@ export function aggregateFootprintCandles(
 export function aggregateByTimeFrame(
   candles: readonly FootprintCandle[],
   targetTimeFrame: TimeFrame
-): FootprintCandle {
-  return aggregateFootprintCandles(candles, targetTimeFrame);
+): readonly FootprintCandle[] {
+  if (candles.length === 0) return [];
+  const first = candles[0];
+  if (!first) return [];
+  const sourceDuration = TIME_FRAME_DURATION_MS[first.timeFrame];
+  const targetDuration = TIME_FRAME_DURATION_MS[targetTimeFrame];
+  if (targetDuration < sourceDuration) {
+    throw new Error(
+      `Target timeframe ${targetTimeFrame} is smaller than source timeframe ${first.timeFrame}`
+    );
+  }
+  if (targetDuration % sourceDuration !== 0) {
+    throw new Error(
+      `Target timeframe ${targetTimeFrame} is not a multiple of source timeframe ${first.timeFrame}`
+    );
+  }
+
+  const groups = new Map<number, FootprintCandle[]>();
+  for (const candle of candles) {
+    if (candle.marketId !== first.marketId) {
+      throw new Error(
+        `Candle market ${candle.marketId} does not match source market ${first.marketId}`
+      );
+    }
+    if (candle.timeFrame !== first.timeFrame) {
+      throw new Error(
+        `Candle timeframe ${candle.timeFrame} does not match source timeframe ${first.timeFrame}`
+      );
+    }
+    const start = getCandleStartTime(candle.startTime, targetTimeFrame);
+    const group = groups.get(start);
+    if (group) group.push(candle);
+    else groups.set(start, [candle]);
+  }
+  return [...groups.values()].map((group) =>
+    aggregateFootprintCandles(group, targetTimeFrame)
+  );
 }
