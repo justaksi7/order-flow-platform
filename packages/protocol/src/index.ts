@@ -2,5 +2,6 @@ export type {
   ConnectedMessage,
   ServerMessage,
   SnapshotMessage,
-  CandleCompletedMessage
+  CandleCompletedMessage,
+  CurrentCandleMessage
 } from "./serverMessages.js";

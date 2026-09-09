@@ -17,7 +17,13 @@ export type CandleCompletedMessage = {
   readonly candle: SerializedFootprintCandle;
 };
 
+export type CurrentCandleMessage = {
+  readonly type: "CURRENT_CANDLE";
+  readonly candle: SerializedFootprintCandle;
+};
+
 export type ServerMessage =
   | ConnectedMessage
   | CandleCompletedMessage
+  | CurrentCandleMessage
   | SnapshotMessage;

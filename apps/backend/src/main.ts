@@ -11,6 +11,10 @@ import {
 } from "@orderflow/domain";
 
 import {
+  closeWebSocketServer
+} from "./websocket/closeWebSocketServer.js";
+
+import {
   BitgetMarketDataProvider
 } from "@orderflow/market-data";
 
@@ -22,7 +26,10 @@ import {
   createSnapshotMessage
 } from "./websocket/createSnapshotMessage.js";
 import { WebSocketServer } from "ws";
-import { CandleCompletedMessage } from "@orderflow/protocol";
+import {
+  CandleCompletedMessage,
+  CurrentCandleMessage,
+} from "@orderflow/protocol";
 import { broadcastServerMessage } from "./websocket/broadcastServerMessage.js";
 
 const WEB_SOCKET_PORT = 8080;
@@ -168,36 +175,66 @@ function printFootprintCandle(
     )}`
   );
 }
+const CURRENT_CANDLE_BROADCAST_INTERVAL_MS = 250;
 
-function handleTrade(trade: Trade, webSocketServer: WebSocketServer): void {
+let lastCurrentCandleBroadcastTime = 0;
+
+function handleTrade(
+  trade: Trade,
+  webSocketServer: WebSocketServer
+): void {
   const result =
     footprintCandleBuilder.addTrade(trade);
 
-  if (!result.completedCandle) {
+  if (result.completedCandle) {
+    candleBuffer.add(result.completedCandle);
+
+    const candleCompletedMessage:
+      CandleCompletedMessage = {
+      type: "CANDLE_COMPLETED",
+      candle: serializeFootprintCandle(
+        result.completedCandle
+      )
+    };
+
+    broadcastServerMessage(
+      webSocketServer,
+      candleCompletedMessage
+    );
+
+    console.log(
+      `\nCandles im Buffer: ` +
+      `${candleBuffer.size}/${BUFFER_CAPACITY}`
+    );
+
+    printFootprintCandle(
+      result.completedCandle
+    );
+  }
+
+  const now = Date.now();
+
+  if (
+    now - lastCurrentCandleBroadcastTime <
+    CURRENT_CANDLE_BROADCAST_INTERVAL_MS
+  ) {
     return;
   }
 
-  candleBuffer.add(result.completedCandle);
-  const candleCompletedMessage: CandleCompletedMessage = {
-    type: "CANDLE_COMPLETED",
+  const currentCandleMessage:
+    CurrentCandleMessage = {
+    type: "CURRENT_CANDLE",
     candle: serializeFootprintCandle(
-      result.completedCandle
+      result.currentCandle
     )
   };
 
   broadcastServerMessage(
     webSocketServer,
-    candleCompletedMessage
+    currentCandleMessage
   );
 
-  console.log(
-    `\nCandles im Buffer: ` +
-    `${candleBuffer.size}/${BUFFER_CAPACITY}`
-  );
-
-  printFootprintCandle(
-    result.completedCandle
-  );
+  lastCurrentCandleBroadcastTime = now;
 }
 
 let isShuttingDown = false;
@@ -212,21 +249,38 @@ async function shutdown(
   isShuttingDown = true;
 
   console.log(
-    `\n${signal} received. Closing connection...`
+    `\n${signal} received. Closing connections...`
   );
 
   try {
     await provider.disconnect();
-    console.log("Connection closed.");
+    console.log("Market-data connection closed.");
   } catch (error) {
     console.error(
-      "Error while closing connection:",
+      "Error while closing market-data connection:",
       error
     );
 
     process.exitCode = 1;
-  } finally {
-    process.exit();
+  }
+
+  if (webSocketServer) {
+    try {
+      await closeWebSocketServer(
+        webSocketServer
+      );
+
+      webSocketServer = undefined;
+
+      console.log("WebSocket server closed.");
+    } catch (error) {
+      console.error(
+        "Error while closing WebSocket server:",
+        error
+      );
+
+      process.exitCode = 1;
+    }
   }
 }
 
@@ -240,13 +294,18 @@ process.once(
   () => void shutdown("SIGTERM")
 );
 
+let webSocketServer:
+  WebSocketServer | undefined;
+
 async function main(): Promise<void> {
-  const webSocketServer = createWebSocketServer(
+  const server = createWebSocketServer(
     WEB_SOCKET_PORT,
     () => createSnapshotMessage(
       candleBuffer.getAll()
     )
   );
+
+  webSocketServer = server;
 
   await provider.connect();
 
@@ -258,7 +317,7 @@ async function main(): Promise<void> {
     market,
     (trade) => handleTrade(
       trade,
-      webSocketServer
+      server
     )
   );
 }
