@@ -4,6 +4,7 @@
     { "path": "packages/domain" },
     { "path": "packages/markets" },
     { "path": "packages/market-data" },
+    { "path": "packages/protocol" },
     { "path": "apps/backend" }
   ]
 }

@@ -6,7 +6,8 @@ import type {
 import {
   FootprintCandleBuffer,
   FootprintCandleBuilder,
-  getCandleVwap
+  getCandleVwap,
+  serializeFootprintCandle
 } from "@orderflow/domain";
 
 import {
@@ -15,7 +16,14 @@ import {
 
 import { getMarket } from "@orderflow/markets";
 
-import {createWebSocketServer} from "../src/websocket/createWebSocketServer.js";
+import { createWebSocketServer } from "../src/websocket/createWebSocketServer.js";
+
+import {
+  createSnapshotMessage
+} from "./websocket/createSnapshotMessage.js";
+import { WebSocketServer } from "ws";
+import { CandleCompletedMessage } from "@orderflow/protocol";
+import { broadcastServerMessage } from "./websocket/broadcastServerMessage.js";
 
 const WEB_SOCKET_PORT = 8080;
 
@@ -95,19 +103,19 @@ function printFootprintCandle(
 
   console.log(
     `${startTime} - ${endTime} | ` +
-      `O: ${open} H: ${high} ` +
-      `L: ${low} C: ${close} ` +
-      `V: ${volume} Trades: ${tradeCount}`
+    `O: ${open} H: ${high} ` +
+    `L: ${low} C: ${close} ` +
+    `V: ${volume} Trades: ${tradeCount}`
   );
 
   console.log(
     "       PRICE |        BID |        ASK |" +
-      "      DELTA | TRADES"
+    "      DELTA | TRADES"
   );
 
   console.log(
     "-------------|------------|------------|" +
-      "------------|-------"
+    "------------|-------"
   );
 
   const sortedLevels = [
@@ -142,16 +150,16 @@ function printFootprintCandle(
 
     console.log(
       `${price} |${bidVolume} |${askVolume} |` +
-        `${delta} |${levelTradeCount}`
+      `${delta} |${levelTradeCount}`
     );
   }
 
   console.log(
     `Total Bid: ` +
-      `${totalBidVolume.toFixed(quantityDecimals)} | ` +
-      `Total Ask: ` +
-      `${totalAskVolume.toFixed(quantityDecimals)} | ` +
-      `Delta: ${totalDelta.toFixed(quantityDecimals)}`
+    `${totalBidVolume.toFixed(quantityDecimals)} | ` +
+    `Total Ask: ` +
+    `${totalAskVolume.toFixed(quantityDecimals)} | ` +
+    `Delta: ${totalDelta.toFixed(quantityDecimals)}`
   );
 
   console.log(
@@ -161,7 +169,7 @@ function printFootprintCandle(
   );
 }
 
-function handleTrade(trade: Trade): void {
+function handleTrade(trade: Trade, webSocketServer: WebSocketServer): void {
   const result =
     footprintCandleBuilder.addTrade(trade);
 
@@ -170,10 +178,21 @@ function handleTrade(trade: Trade): void {
   }
 
   candleBuffer.add(result.completedCandle);
+  const candleCompletedMessage: CandleCompletedMessage = {
+    type: "CANDLE_COMPLETED",
+    candle: serializeFootprintCandle(
+      result.completedCandle
+    )
+  };
+
+  broadcastServerMessage(
+    webSocketServer,
+    candleCompletedMessage
+  );
 
   console.log(
     `\nCandles im Buffer: ` +
-      `${candleBuffer.size}/${BUFFER_CAPACITY}`
+    `${candleBuffer.size}/${BUFFER_CAPACITY}`
   );
 
   printFootprintCandle(
@@ -222,10 +241,11 @@ process.once(
 );
 
 async function main(): Promise<void> {
-
-  createWebSocketServer(WEB_SOCKET_PORT);
-  console.log(
-    `Connecting to Bitget for ${market.symbol}...`
+  const webSocketServer = createWebSocketServer(
+    WEB_SOCKET_PORT,
+    () => createSnapshotMessage(
+      candleBuffer.getAll()
+    )
   );
 
   await provider.connect();
@@ -236,7 +256,10 @@ async function main(): Promise<void> {
 
   await provider.subscribeTrades(
     market,
-    handleTrade
+    (trade) => handleTrade(
+      trade,
+      webSocketServer
+    )
   );
 }
 
