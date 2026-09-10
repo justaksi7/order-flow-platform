@@ -14,9 +14,9 @@ type CanvasTarget = Parameters<
 >[0];
 
 const MINIMUM_BAR_SPACING = 80;
-const CELL_WIDTH_FACTOR = 0.9;
 const MINIMUM_TEXT_BAR_SPACING = 110;
 const MINIMUM_TEXT_CELL_HEIGHT = 14;
+const CELL_WIDTH_FACTOR = 0.9;
 
 export class FootprintSeriesRenderer
   implements ICustomSeriesPaneRenderer {
@@ -46,21 +46,20 @@ export class FootprintSeriesRenderer
       !data ||
       data.visibleRange === null ||
       data.bars.length === 0 ||
-      data.barSpacing < MINIMUM_BAR_SPACING
+      data.barSpacing <
+        MINIMUM_BAR_SPACING
     ) {
       return;
     }
 
+    const visibleRange =
+      data.visibleRange;
+
     target.useMediaCoordinateSpace(
       ({ context }) => {
-        const {
-          from,
-          to
-        } = data.visibleRange!;
-
         for (
-          let index = from;
-          index < to;
+          let index = visibleRange.from;
+          index < visibleRange.to;
           index += 1
         ) {
           const bar = data.bars[index];
@@ -69,7 +68,8 @@ export class FootprintSeriesRenderer
             continue;
           }
 
-          const candle = bar.originalData;
+          const candle =
+            bar.originalData;
 
           const totalWidth =
             data.barSpacing *
@@ -81,40 +81,51 @@ export class FootprintSeriesRenderer
           const left =
             bar.x - totalWidth / 2;
 
-          const maximumVolume = Math.max(
-            Number.EPSILON,
-            ...candle.levels.map(
-              (level) =>
-                Math.max(
-                  level.bidVolume,
-                  level.askVolume
+          const maximumVolume =
+            calculateMaximumSideVolume(
+              candle
+            );
+
+          const pointOfControlPrice =
+            findPointOfControlPrice(
+              candle
+            );
+
+          const imbalances =
+            candle.analysis
+              ?.imbalances ?? [];
+
+          const buyImbalancePrices =
+            new Set(
+              imbalances
+                .filter(
+                  (imbalance) =>
+                    imbalance.side ===
+                    "BUY"
                 )
-            )
-          );
+                .map(
+                  (imbalance) =>
+                    imbalance.price
+                )
+            );
 
-          let pointOfControlPrice:
-            number | undefined;
+          const sellImbalancePrices =
+            new Set(
+              imbalances
+                .filter(
+                  (imbalance) =>
+                    imbalance.side ===
+                    "SELL"
+                )
+                .map(
+                  (imbalance) =>
+                    imbalance.price
+                )
+            );
 
-          let pointOfControlVolume = -1;
-
-          for (const level of candle.levels) {
-            const totalVolume =
-              level.bidVolume +
-              level.askVolume;
-
-            if (
-              totalVolume >
-              pointOfControlVolume
-            ) {
-              pointOfControlVolume =
-                totalVolume;
-
-              pointOfControlPrice =
-                level.price;
-            }
-          }
-
-          for (const level of candle.levels) {
+          for (
+            const level of candle.levels
+          ) {
             const upperPrice =
               level.price +
               candle.priceStep / 2;
@@ -124,10 +135,14 @@ export class FootprintSeriesRenderer
               candle.priceStep / 2;
 
             const upperY =
-              priceToCoordinate(upperPrice);
+              priceToCoordinate(
+                upperPrice
+              );
 
             const lowerY =
-              priceToCoordinate(lowerPrice);
+              priceToCoordinate(
+                lowerPrice
+              );
 
             if (
               upperY === null ||
@@ -143,7 +158,9 @@ export class FootprintSeriesRenderer
 
             const height = Math.max(
               1,
-              Math.abs(lowerY - upperY)
+              Math.abs(
+                lowerY - upperY
+              )
             );
 
             const bidIntensity =
@@ -154,115 +171,301 @@ export class FootprintSeriesRenderer
               level.askVolume /
               maximumVolume;
 
-            // Bid-Z-Z-Zelle
-            context.fillStyle =
-              createVolumeColor(
-                239,
-                68,
-                68,
-                bidIntensity
-              );
-
-            context.fillRect(
+            drawBidCell(
+              context,
               left,
               top,
               halfWidth,
-              height
+              height,
+              bidIntensity
             );
 
-            // Ask-Zelle
-            context.fillStyle =
-              createVolumeColor(
-                34,
-                197,
-                94,
-                askIntensity
-              );
-
-            context.fillRect(
+            drawAskCell(
+              context,
               left + halfWidth,
               top,
               halfWidth,
-              height
+              height,
+              askIntensity
             );
 
-            // POC-Rahmen
             const isPointOfControl =
               level.price ===
               pointOfControlPrice;
 
-            context.strokeStyle =
-              isPointOfControl
-                ? "#f59e0b"
-                : "#334155";
-
-            context.lineWidth =
-              isPointOfControl ? 2 : 1;
-
-            context.strokeRect(
+            drawLevelBorder(
+              context,
               left,
               top,
               totalWidth,
+              height,
+              isPointOfControl
+            );
+
+            drawCenterLine(
+              context,
+              left + halfWidth,
+              top,
               height
             );
 
-            // Mittlere Trennlinie
-            context.beginPath();
-
-            context.moveTo(
-              left + halfWidth,
-              top
-            );
-
-            context.lineTo(
-              left + halfWidth,
-              top + height
-            );
-
-            // Volumenzahlen
-            const canDrawText =
-              data.barSpacing >=
-              MINIMUM_TEXT_BAR_SPACING &&
-              height >=
-              MINIMUM_TEXT_CELL_HEIGHT;
-
-            if (canDrawText) {
-              const centerY =
-                top + height / 2;
-
-              context.font =
-                "11px ui-monospace, " +
-                "SFMono-Regular, Menlo, " +
-                "Consolas, monospace";
-
-              context.textBaseline = "middle";
-              context.fillStyle = "#f8fafc";
-
-              context.textAlign = "right";
-
-              context.fillText(
-                formatVolume(level.bidVolume),
-                left + halfWidth - 4,
-                centerY,
-                halfWidth - 8
+            const hasSellImbalance =
+              sellImbalancePrices.has(
+                level.price
               );
 
-              context.textAlign = "left";
+            const hasBuyImbalance =
+              buyImbalancePrices.has(
+                level.price
+              );
 
-              context.fillText(
-                formatVolume(level.askVolume),
-                left + halfWidth + 4,
-                centerY,
-                halfWidth - 8
+            if (hasSellImbalance) {
+              drawImbalanceBorder(
+                context,
+                left,
+                top,
+                halfWidth,
+                height,
+                "#fda4af"
               );
             }
 
-            context.stroke();
+            if (hasBuyImbalance) {
+              drawImbalanceBorder(
+                context,
+                left + halfWidth,
+                top,
+                halfWidth,
+                height,
+                "#86efac"
+              );
+            }
+
+            const canDrawText =
+              data.barSpacing >=
+                MINIMUM_TEXT_BAR_SPACING &&
+              height >=
+                MINIMUM_TEXT_CELL_HEIGHT;
+
+            if (canDrawText) {
+              drawVolumeText(
+                context,
+                level.bidVolume,
+                level.askVolume,
+                left,
+                top,
+                halfWidth,
+                height
+              );
+            }
           }
         }
       }
     );
   }
+}
+
+function calculateMaximumSideVolume(
+  candle: FootprintSeriesData
+): number {
+  return Math.max(
+    Number.EPSILON,
+
+    ...candle.levels.map(
+      (level) =>
+        Math.max(
+          level.bidVolume,
+          level.askVolume
+        )
+    )
+  );
+}
+
+function findPointOfControlPrice(
+  candle: FootprintSeriesData
+): number | undefined {
+  let pointOfControlPrice:
+    number | undefined;
+
+  let pointOfControlVolume = -1;
+
+  for (const level of candle.levels) {
+    const totalVolume =
+      level.bidVolume +
+      level.askVolume;
+
+    if (
+      totalVolume >
+      pointOfControlVolume
+    ) {
+      pointOfControlVolume =
+        totalVolume;
+
+      pointOfControlPrice =
+        level.price;
+    }
+  }
+
+  return pointOfControlPrice;
+}
+
+function drawBidCell(
+  context:
+    CanvasRenderingContext2D,
+  left: number,
+  top: number,
+  width: number,
+  height: number,
+  intensity: number
+): void {
+  context.fillStyle =
+    createVolumeColor(
+      239,
+      68,
+      68,
+      intensity
+    );
+
+  context.fillRect(
+    left,
+    top,
+    width,
+    height
+  );
+}
+
+function drawAskCell(
+  context:
+    CanvasRenderingContext2D,
+  left: number,
+  top: number,
+  width: number,
+  height: number,
+  intensity: number
+): void {
+  context.fillStyle =
+    createVolumeColor(
+      34,
+      197,
+      94,
+      intensity
+    );
+
+  context.fillRect(
+    left,
+    top,
+    width,
+    height
+  );
+}
+
+function drawLevelBorder(
+  context:
+    CanvasRenderingContext2D,
+  left: number,
+  top: number,
+  width: number,
+  height: number,
+  isPointOfControl: boolean
+): void {
+  context.strokeStyle =
+    isPointOfControl
+      ? "#f59e0b"
+      : "#334155";
+
+  context.lineWidth =
+    isPointOfControl ? 2 : 1;
+
+  context.strokeRect(
+    left,
+    top,
+    width,
+    height
+  );
+}
+
+function drawCenterLine(
+  context:
+    CanvasRenderingContext2D,
+  centerX: number,
+  top: number,
+  height: number
+): void {
+  context.beginPath();
+
+  context.moveTo(
+    centerX,
+    top
+  );
+
+  context.lineTo(
+    centerX,
+    top + height
+  );
+
+  context.strokeStyle = "#334155";
+  context.lineWidth = 1;
+  context.stroke();
+}
+
+function drawImbalanceBorder(
+  context:
+    CanvasRenderingContext2D,
+  left: number,
+  top: number,
+  width: number,
+  height: number,
+  color: string
+): void {
+  context.strokeStyle = color;
+  context.lineWidth = 2;
+
+  context.strokeRect(
+    left,
+    top,
+    width,
+    height
+  );
+}
+
+function drawVolumeText(
+  context:
+    CanvasRenderingContext2D,
+  bidVolume: number,
+  askVolume: number,
+  left: number,
+  top: number,
+  halfWidth: number,
+  height: number
+): void {
+  const centerY =
+    top + height / 2;
+
+  context.font =
+    "11px ui-monospace, " +
+    "SFMono-Regular, Menlo, " +
+    "Consolas, monospace";
+
+  context.textBaseline = "middle";
+  context.fillStyle = "#f8fafc";
+
+  context.textAlign = "right";
+
+  context.fillText(
+    formatVolume(bidVolume),
+    left + halfWidth - 4,
+    centerY,
+    halfWidth - 8
+  );
+
+  context.textAlign = "left";
+
+  context.fillText(
+    formatVolume(askVolume),
+    left + halfWidth + 4,
+    centerY,
+    halfWidth - 8
+  );
 }
 
 function createVolumeColor(
@@ -271,16 +474,20 @@ function createVolumeColor(
   blue: number,
   intensity: number
 ): string {
-  const normalizedIntensity = Math.min(
-    1,
-    Math.max(0, intensity)
-  );
+  const normalizedIntensity =
+    Math.min(
+      1,
+      Math.max(0, intensity)
+    );
 
   const alpha =
     0.15 +
     normalizedIntensity * 0.75;
 
-  return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
+  return (
+    `rgba(${red}, ${green}, ` +
+    `${blue}, ${alpha})`
+  );
 }
 
 function formatVolume(

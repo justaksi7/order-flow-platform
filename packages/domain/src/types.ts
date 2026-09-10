@@ -93,7 +93,7 @@ export interface FootprintImbalance {
   readonly side: "BUY" | "SELL";
   readonly dominantVolume: number;
   readonly comparedVolume: number;
-  readonly ratio: number;
+  readonly ratio: number | null;
 }
 
 export interface StackedImbalance {
@@ -114,3 +114,9 @@ export interface FootprintCandleAnalysis {
 export type SerializedFootprintCandle = Omit<FootprintCandle, "levels"> & {
   readonly levels: readonly FootprintLevel[];
 };
+
+export type SerializedAnalyzedFootprintCandle =
+  SerializedFootprintCandle & {
+    readonly analysis:
+      FootprintCandleAnalysis;
+  };

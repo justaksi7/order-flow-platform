@@ -1,5 +1,5 @@
 import {
-  serializeFootprintCandle
+  serializeAnalyzedFootprintCandle
 } from "@orderflow/domain";
 
 import type {
@@ -15,8 +15,12 @@ export function createSnapshotMessage(
 ): SnapshotMessage {
   return {
     type: "SNAPSHOT",
+
     candles: candles.map(
-      serializeFootprintCandle
+      (candle) =>
+        serializeAnalyzedFootprintCandle(
+          candle
+        )
     )
   };
 }

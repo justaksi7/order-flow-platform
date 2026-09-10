@@ -7,7 +7,7 @@ import {
   FootprintCandleBuffer,
   FootprintCandleBuilder,
   getCandleVwap,
-  serializeFootprintCandle
+  serializeAnalyzedFootprintCandle
 } from "@orderflow/domain";
 
 import {
@@ -193,9 +193,11 @@ function handleTrade(
     const candleCompletedMessage:
       CandleCompletedMessage = {
       type: "CANDLE_COMPLETED",
-      candle: serializeFootprintCandle(
-        result.completedCandle
-      )
+
+      candle:
+        serializeAnalyzedFootprintCandle(
+          result.completedCandle
+        )
     };
 
     broadcastServerMessage(
@@ -225,9 +227,11 @@ function handleTrade(
   const currentCandleMessage:
     CurrentCandleMessage = {
     type: "CURRENT_CANDLE",
-    candle: serializeFootprintCandle(
-      result.currentCandle
-    )
+
+    candle:
+      serializeAnalyzedFootprintCandle(
+        result.currentCandle
+      )
   };
 
   broadcastServerMessage(

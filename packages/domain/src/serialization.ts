@@ -1,6 +1,11 @@
+import {
+  analyzeFootprintCandle
+} from "./imbalances.js";
+
 import type {
   FootprintCandle,
   FootprintLevel,
+  SerializedAnalyzedFootprintCandle,
   SerializedFootprintCandle
 } from "./types.js";
 
@@ -10,6 +15,17 @@ export function serializeFootprintCandle(
   return {
     ...candle,
     levels: [...candle.levels.values()].sort((a, b) => a.price - b.price)
+  };
+}
+
+export function serializeAnalyzedFootprintCandle(
+  candle: FootprintCandle
+): SerializedAnalyzedFootprintCandle {
+  return {
+    ...serializeFootprintCandle(candle),
+
+    analysis:
+      analyzeFootprintCandle(candle)
   };
 }
 
