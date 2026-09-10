@@ -36,7 +36,8 @@ const WEB_SOCKET_PORT = 8080;
 
 
 const BUFFER_CAPACITY = 1_440;
-const FOOTPRINT_TICK_SIZE = 0.1;
+const SNAPSHOT_CANDLE_LIMIT = 200;
+const FOOTPRINT_TICK_SIZE = 10;
 
 const marketId =
   process.env.MARKET_ID ?? "bitget-btc-usdt";
@@ -301,7 +302,7 @@ async function main(): Promise<void> {
   const server = createWebSocketServer(
     WEB_SOCKET_PORT,
     () => createSnapshotMessage(
-      candleBuffer.getAll()
+      candleBuffer.getAll().slice(-SNAPSHOT_CANDLE_LIMIT)
     )
   );
 

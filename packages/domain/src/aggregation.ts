@@ -45,6 +45,12 @@ export function aggregateFootprintCandles(
         `Candle market ${candle.marketId} does not match first candle market ${first.marketId}`
       );
     }
+    if (candle.priceStep !== first.priceStep) {
+      throw new Error(
+        `Candle priceStep ${candle.priceStep} does not match ` +
+        `first candle priceStep ${first.priceStep}`
+      );
+    }
     if (candle.startTime < startTime || candle.endTime > endTime) {
       throw new Error(
         `Candle time range [${candle.startTime}, ${candle.endTime}) is outside the target time range ` +
@@ -55,11 +61,11 @@ export function aggregateFootprintCandles(
       const existing = levels.get(level.price);
       levels.set(level.price, existing
         ? {
-            price: level.price,
-            bidVolume: existing.bidVolume + level.bidVolume,
-            askVolume: existing.askVolume + level.askVolume,
-            tradeCount: existing.tradeCount + level.tradeCount
-          }
+          price: level.price,
+          bidVolume: existing.bidVolume + level.bidVolume,
+          askVolume: existing.askVolume + level.askVolume,
+          tradeCount: existing.tradeCount + level.tradeCount
+        }
         : level);
     }
   }
@@ -70,12 +76,40 @@ export function aggregateFootprintCandles(
     startTime,
     endTime,
     open: first.open,
-    high: Math.max(...candles.map((candle) => candle.high)),
-    low: Math.min(...candles.map((candle) => candle.low)),
+
+    high: Math.max(
+      ...candles.map(
+        (candle) => candle.high
+      )
+    ),
+
+    low: Math.min(
+      ...candles.map(
+        (candle) => candle.low
+      )
+    ),
+
     close: last.close,
-    volume: candles.reduce((sum, candle) => sum + candle.volume, 0),
-    quoteVolume: candles.reduce((sum, candle) => sum + candle.quoteVolume, 0),
-    tradeCount: candles.reduce((sum, candle) => sum + candle.tradeCount, 0),
+
+    volume: candles.reduce(
+      (sum, candle) =>
+        sum + candle.volume,
+      0
+    ),
+
+    quoteVolume: candles.reduce(
+      (sum, candle) =>
+        sum + candle.quoteVolume,
+      0
+    ),
+
+    tradeCount: candles.reduce(
+      (sum, candle) =>
+        sum + candle.tradeCount,
+      0
+    ),
+
+    priceStep: first.priceStep,
     levels
   };
 }

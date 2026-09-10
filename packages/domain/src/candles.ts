@@ -112,19 +112,48 @@ export class CandleBuilder {
   }
 }
 
-export function getPriceLevel(price: number, tickSize: number): number {
-  if (!Number.isFinite(price) || !Number.isFinite(tickSize) || tickSize <= 0 || price <= 0) {
-    throw new Error(`Invalid price ${price} or tickSize ${tickSize}`);
+export function getPriceLevel(
+  price: number,
+  priceStep: number
+): number {
+  if (
+    !Number.isFinite(price) ||
+    !Number.isFinite(priceStep) ||
+    priceStep <= 0 ||
+    price <= 0
+  ) {
+    throw new Error(
+      `Invalid price ${price} or priceStep ${priceStep}`
+    );
   }
-  return Number((Math.round(price / tickSize) * tickSize).toFixed(8));
+
+  return Number(
+    (
+      Math.round(price / priceStep) *
+      priceStep
+    ).toFixed(8)
+  );
 }
 
-export function createFootprintLevel(trade: Trade, tickSize: number): FootprintLevel {
-  const price = getPriceLevel(trade.price, tickSize);
+export function createFootprintLevel(
+  trade: Trade,
+  priceStep: number
+): FootprintLevel {
+  const price = getPriceLevel(
+    trade.price,
+    priceStep
+  );
+
   return {
     price,
-    bidVolume: trade.side === "SELL" ? trade.quantity : 0,
-    askVolume: trade.side === "BUY" ? trade.quantity : 0,
+    bidVolume:
+      trade.side === "SELL"
+        ? trade.quantity
+        : 0,
+    askVolume:
+      trade.side === "BUY"
+        ? trade.quantity
+        : 0,
     tradeCount: 1
   };
 }
@@ -132,42 +161,92 @@ export function createFootprintLevel(trade: Trade, tickSize: number): FootprintL
 export function updateFootprintLevel(
   level: FootprintLevel,
   trade: Trade,
-  tickSize: number
+  priceStep: number
 ): FootprintLevel {
-  const price = getPriceLevel(trade.price, tickSize);
+  const price = getPriceLevel(
+    trade.price,
+    priceStep
+  );
+
   if (price !== level.price) {
-    throw new Error(`Trade price level ${price} does not match level price ${level.price}`);
+    throw new Error(
+      `Trade price level ${price} does not match ` +
+      `level price ${level.price}`
+    );
   }
+
   return {
     ...level,
-    bidVolume: level.bidVolume + (trade.side === "SELL" ? trade.quantity : 0),
-    askVolume: level.askVolume + (trade.side === "BUY" ? trade.quantity : 0),
-    tradeCount: level.tradeCount + 1
+
+    bidVolume:
+      level.bidVolume +
+      (trade.side === "SELL"
+        ? trade.quantity
+        : 0),
+
+    askVolume:
+      level.askVolume +
+      (trade.side === "BUY"
+        ? trade.quantity
+        : 0),
+
+    tradeCount:
+      level.tradeCount + 1
   };
 }
 
 export function createFootprintCandle(
   trade: Trade,
   timeFrame: TimeFrame,
-  tickSize: number
+  priceStep: number
 ): FootprintCandle {
-  const level = createFootprintLevel(trade, tickSize);
-  return { ...createCandle(trade, timeFrame), levels: new Map([[level.price, level]]) };
+  const level = createFootprintLevel(
+    trade,
+    priceStep
+  );
+
+  return {
+    ...createCandle(trade, timeFrame),
+    priceStep,
+
+    levels: new Map([
+      [level.price, level]
+    ])
+  };
 }
 
 export function updateFootprintCandle(
   candle: FootprintCandle,
-  trade: Trade,
-  tickSize: number
+  trade: Trade
 ): FootprintCandle {
-  const price = getPriceLevel(trade.price, tickSize);
-  const existingLevel = candle.levels.get(price);
+  const price = getPriceLevel(
+    trade.price,
+    candle.priceStep
+  );
+
+  const existingLevel =
+    candle.levels.get(price);
+
   const updatedLevel = existingLevel
-    ? updateFootprintLevel(existingLevel, trade, tickSize)
-    : createFootprintLevel(trade, tickSize);
+    ? updateFootprintLevel(
+        existingLevel,
+        trade,
+        candle.priceStep
+      )
+    : createFootprintLevel(
+        trade,
+        candle.priceStep
+      );
+
   const levels = new Map(candle.levels);
+
   levels.set(price, updatedLevel);
-  return { ...updateCandle(candle, trade), levels };
+
+  return {
+  ...updateCandle(candle, trade),
+  priceStep: candle.priceStep,
+  levels
+};
 }
 
 export interface FootprintCandleBuilderResult {
@@ -176,41 +255,87 @@ export interface FootprintCandleBuilderResult {
 }
 
 export class FootprintCandleBuilder {
-  private currentCandle: FootprintCandle | undefined;
+  private currentCandle:
+    FootprintCandle | undefined;
 
   constructor(
     private readonly marketId: string,
     private readonly timeFrame: TimeFrame,
-    private readonly tickSize: number
+    private readonly priceStep: number
   ) {
-    if (!Number.isFinite(tickSize) || tickSize <= 0) {
-      throw new Error(`Invalid tickSize: ${tickSize}`);
+    if (
+      !Number.isFinite(priceStep) ||
+      priceStep <= 0
+    ) {
+      throw new Error(
+        `Invalid priceStep: ${priceStep}`
+      );
     }
   }
 
-  public addTrade(trade: Trade): FootprintCandleBuilderResult {
+  public addTrade(
+    trade: Trade
+  ): FootprintCandleBuilderResult {
     if (trade.marketId !== this.marketId) {
       throw new Error(
-        `Trade market ${trade.marketId} does not match builder market ${this.marketId}`
+        `Trade market ${trade.marketId} does not match ` +
+        `builder market ${this.marketId}`
       );
     }
+
     if (!this.currentCandle) {
-      this.currentCandle = createFootprintCandle(trade, this.timeFrame, this.tickSize);
-      return { currentCandle: this.currentCandle };
+      this.currentCandle =
+        createFootprintCandle(
+          trade,
+          this.timeFrame,
+          this.priceStep
+        );
+
+      return {
+        currentCandle: this.currentCandle
+      };
     }
-    if (trade.timestamp < this.currentCandle.startTime) {
+
+    if (
+      trade.timestamp <
+      this.currentCandle.startTime
+    ) {
       throw new Error(
-        `Out-of-order trade: timestamp ${trade.timestamp} is before ` +
-        `current candle start ${this.currentCandle.startTime}`
+        `Out-of-order trade: timestamp ${trade.timestamp} ` +
+        `is before current candle start ` +
+        `${this.currentCandle.startTime}`
       );
     }
-    if (trade.timestamp >= this.currentCandle.endTime) {
-      const completedCandle = this.currentCandle;
-      this.currentCandle = createFootprintCandle(trade, this.timeFrame, this.tickSize);
-      return { currentCandle: this.currentCandle, completedCandle };
+
+    if (
+      trade.timestamp >=
+      this.currentCandle.endTime
+    ) {
+      const completedCandle =
+        this.currentCandle;
+
+      this.currentCandle =
+        createFootprintCandle(
+          trade,
+          this.timeFrame,
+          this.priceStep
+        );
+
+      return {
+        currentCandle: this.currentCandle,
+        completedCandle
+      };
     }
-    this.currentCandle = updateFootprintCandle(this.currentCandle, trade, this.tickSize);
-    return { currentCandle: this.currentCandle };
+
+    this.currentCandle =
+      updateFootprintCandle(
+        this.currentCandle,
+        trade
+      );
+
+    return {
+      currentCandle: this.currentCandle
+    };
   }
 }
 

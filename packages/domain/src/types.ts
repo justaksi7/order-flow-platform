@@ -63,7 +63,9 @@ export interface FootprintLevel {
 }
 
 export interface FootprintCandle extends Candle {
-  readonly levels: ReadonlyMap<number, FootprintLevel>;
+  readonly priceStep: number;
+  readonly levels:
+    ReadonlyMap<number, FootprintLevel>;
 }
 
 export interface VolumeProfileLevel extends FootprintLevel {
