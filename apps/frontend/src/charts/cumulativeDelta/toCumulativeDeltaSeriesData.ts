@@ -17,7 +17,7 @@ export function toCumulativeDeltaSeriesData(
   candles:
     readonly SerializedFootprintCandle[],
   initialValue = 0
-): readonly LineData<Time>[] {
+): LineData<Time>[] {
   const footprintCandles =
     candles.map(
       deserializeFootprintCandle
