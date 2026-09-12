@@ -147,24 +147,53 @@ export function analyzeVolumeProfile(
   };
 }
 
-export function createVolumeProfile(candle: FootprintCandle): VolumeProfile {
-  const levels = new Map<number, VolumeProfileLevel>();
-  for (const level of candle.levels.values()) {
+export function createVolumeProfile(
+  candle: FootprintCandle
+): VolumeProfile {
+  const levels =
+    new Map<number, VolumeProfileLevel>();
+
+  for (
+    const level of candle.levels.values()
+  ) {
     levels.set(level.price, {
       ...level,
       volume: getLevelVolume(level),
-      delta: level.askVolume - level.bidVolume
+      delta:
+        level.askVolume -
+        level.bidVolume
     });
   }
-  const poc = [...levels.values()].sort((a, b) => b.volume - a.volume)[0];
-  if (!poc) throw new Error("Cannot create a volume profile without levels");
-  const totalVolume = [...levels.values()].reduce((sum, level) => sum + level.volume, 0);
-  const included = [...levels.values()].filter((level) => level.volume >= totalVolume * 0.7);
+
+  if (levels.size === 0) {
+    throw new Error(
+      "Cannot create a volume profile without levels"
+    );
+  }
+
+  const pointOfControl =
+    getPointOfControl(levels);
+
+  const valueArea =
+    calculateValueArea(levels);
+
+  if (
+    !pointOfControl ||
+    !valueArea
+  ) {
+    throw new Error(
+      "Could not analyze volume profile"
+    );
+  }
+
   return {
     levels,
-    pocPrice: poc.price,
-    valueAreaLow: Math.min(...included.map((level) => level.price)),
-    valueAreaHigh: Math.max(...included.map((level) => level.price)),
-    totalVolume
+    pocPrice: pointOfControl.price,
+    valueAreaLow:
+      valueArea.valueAreaLow,
+    valueAreaHigh:
+      valueArea.valueAreaHigh,
+    totalVolume:
+      getProfileVolume(levels)
   };
 }
