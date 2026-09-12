@@ -13,10 +13,12 @@ type CanvasTarget = Parameters<
   ICustomSeriesPaneRenderer["draw"]
 >[0];
 
-const MINIMUM_BAR_SPACING = 80;
+const MINIMUM_BAR_SPACING = 70;
 const MINIMUM_TEXT_BAR_SPACING = 110;
 const MINIMUM_TEXT_CELL_HEIGHT = 14;
 const CELL_WIDTH_FACTOR = 0.9;
+const IMBALANCE_MARKER_WIDTH = 3;
+const STACKED_IMBALANCE_MARKER_WIDTH = 6;
 
 export class FootprintSeriesRenderer
   implements ICustomSeriesPaneRenderer {
@@ -47,7 +49,7 @@ export class FootprintSeriesRenderer
       data.visibleRange === null ||
       data.bars.length === 0 ||
       data.barSpacing <
-        MINIMUM_BAR_SPACING
+      MINIMUM_BAR_SPACING
     ) {
       return;
     }
@@ -220,32 +222,32 @@ export class FootprintSeriesRenderer
               );
 
             if (hasSellImbalance) {
-              drawImbalanceBorder(
+              drawImbalanceMarker(
                 context,
                 left,
                 top,
-                halfWidth,
+                totalWidth,
                 height,
-                "#fda4af"
+                "SELL"
               );
             }
 
             if (hasBuyImbalance) {
-              drawImbalanceBorder(
+              drawImbalanceMarker(
                 context,
-                left + halfWidth,
+                left,
                 top,
-                halfWidth,
+                totalWidth,
                 height,
-                "#86efac"
+                "BUY"
               );
             }
 
             const canDrawText =
               data.barSpacing >=
-                MINIMUM_TEXT_BAR_SPACING &&
+              MINIMUM_TEXT_BAR_SPACING &&
               height >=
-                MINIMUM_TEXT_CELL_HEIGHT;
+              MINIMUM_TEXT_CELL_HEIGHT;
 
             if (canDrawText) {
               drawVolumeText(
@@ -259,6 +261,13 @@ export class FootprintSeriesRenderer
               );
             }
           }
+          drawStackedImbalanceMarkers(
+            context,
+            candle,
+            left,
+            totalWidth,
+            priceToCoordinate
+          );
         }
       }
     );
@@ -408,26 +417,107 @@ function drawCenterLine(
   context.stroke();
 }
 
-function drawImbalanceBorder(
+function drawImbalanceMarker(
   context:
     CanvasRenderingContext2D,
   left: number,
   top: number,
-  width: number,
+  totalWidth: number,
   height: number,
-  color: string
+  side: "BUY" | "SELL"
 ): void {
-  context.strokeStyle = color;
-  context.lineWidth = 2;
+  const markerLeft =
+    side === "SELL"
+      ? left
+      : left +
+      totalWidth -
+      IMBALANCE_MARKER_WIDTH;
 
-  context.strokeRect(
-    left,
+  context.fillStyle =
+    side === "BUY"
+      ? "#86efac"
+      : "#fda4af";
+
+  context.fillRect(
+    markerLeft,
     top,
-    width,
+    IMBALANCE_MARKER_WIDTH,
     height
   );
 }
 
+function drawStackedImbalanceMarkers(
+  context:
+    CanvasRenderingContext2D,
+  candle: FootprintSeriesData,
+  left: number,
+  totalWidth: number,
+  priceToCoordinate:
+    PriceToCoordinateConverter
+): void {
+  const stackedImbalances =
+    candle.analysis
+      ?.stackedImbalances ?? [];
+
+  for (
+    const stackedImbalance
+    of stackedImbalances
+  ) {
+    const upperPrice =
+      stackedImbalance.highPrice +
+      candle.priceStep / 2;
+
+    const lowerPrice =
+      stackedImbalance.lowPrice -
+      candle.priceStep / 2;
+
+    const upperY =
+      priceToCoordinate(upperPrice);
+
+    const lowerY =
+      priceToCoordinate(lowerPrice);
+
+    if (
+      upperY === null ||
+      lowerY === null
+    ) {
+      continue;
+    }
+
+    const top = Math.min(
+      upperY,
+      lowerY
+    );
+
+    const height = Math.max(
+      2,
+      Math.abs(lowerY - upperY)
+    );
+
+    const markerGap = 4;
+
+    const markerLeft =
+      stackedImbalance.side === "SELL"
+        ? left -
+        markerGap -
+        STACKED_IMBALANCE_MARKER_WIDTH
+        : left +
+        totalWidth +
+        markerGap;
+
+    context.fillStyle =
+      stackedImbalance.side === "BUY"
+        ? "#22c55e"
+        : "#ef4444";
+
+    context.fillRect(
+      markerLeft,
+      top,
+      STACKED_IMBALANCE_MARKER_WIDTH,
+      height
+    );
+  }
+}
 function drawVolumeText(
   context:
     CanvasRenderingContext2D,

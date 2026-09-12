@@ -34,6 +34,9 @@ import type {
   FootprintSeriesData
 } from "../charts/footprint/FootprintSeriesData";
 
+const FOOTPRINT_MODE_ENTER_SPACING = 80;
+const FOOTPRINT_MODE_EXIT_SPACING = 70;
+
 type SnapshotMessage = Extract<
   ServerMessage,
   { type: "SNAPSHOT" }
@@ -135,15 +138,74 @@ export function PriceChart({
       }
     );
 
-    const footprintSeries = chart.addCustomSeries(
-      new FootprintSeries()
-    );
+    const footprintSeries =
+      chart.addCustomSeries(
+        new FootprintSeries(),
+        {
+          visible: false
+        }
+      );
+
+    let isFootprintMode = false;
+
+    function updateChartMode(): void {
+      const barSpacing =
+        chart.timeScale()
+          .options()
+          .barSpacing;
+
+      if (
+        !isFootprintMode &&
+        barSpacing >=
+        FOOTPRINT_MODE_ENTER_SPACING
+      ) {
+        isFootprintMode = true;
+
+        series.applyOptions({
+          visible: false
+        });
+
+        footprintSeries.applyOptions({
+          visible: true
+        });
+
+        return;
+      }
+
+      if (
+        isFootprintMode &&
+        barSpacing <=
+        FOOTPRINT_MODE_EXIT_SPACING
+      ) {
+        isFootprintMode = false;
+
+        series.applyOptions({
+          visible: true
+        });
+
+        footprintSeries.applyOptions({
+          visible: false
+        });
+      }
+    }
+
+    chart.timeScale()
+      .subscribeVisibleLogicalRangeChange(
+        updateChartMode
+      );
+
+    updateChartMode();
 
     chartRef.current = chart;
     seriesRef.current = series;
     footprintSeriesRef.current = footprintSeries;
 
     return () => {
+      chart.timeScale()
+        .unsubscribeVisibleLogicalRangeChange(
+          updateChartMode
+        );
+
       chart.remove();
 
       chartRef.current = null;

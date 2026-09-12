@@ -27,7 +27,11 @@ export interface FootprintSeriesData
   readonly low: number;
   readonly close: number;
   readonly priceStep: number;
-  readonly levels: readonly FootprintLevelData[];
+  readonly levels:
+  readonly FootprintLevelData[];
+
+  readonly analysis:
+  SerializedCandle["analysis"];
 }
 
 export function toFootprintSeriesData(
@@ -43,6 +47,7 @@ export function toFootprintSeriesData(
     low: candle.low,
     close: candle.close,
     priceStep: candle.priceStep,
-    levels: candle.levels
+    levels: candle.levels,
+    analysis: candle.analysis
   };
 }
