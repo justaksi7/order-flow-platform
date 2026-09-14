@@ -8,6 +8,11 @@ import type {
   ServerMessage
 } from "@orderflow/protocol";
 
+import {
+  createVolumeProfile,
+  deserializeFootprintCandle
+} from "@orderflow/domain";
+
 type SnapshotMessage = Extract<
   ServerMessage,
   { type: "SNAPSHOT" }
@@ -29,6 +34,8 @@ export interface FootprintSeriesData
   readonly priceStep: number;
   readonly levels:
   readonly FootprintLevelData[];
+  readonly valueAreaHigh: number;
+  readonly valueAreaLow: number;
 
   readonly analysis:
   SerializedCandle["analysis"];
@@ -37,6 +44,16 @@ export interface FootprintSeriesData
 export function toFootprintSeriesData(
   candle: SerializedCandle
 ): FootprintSeriesData {
+  const footprintCandle =
+    deserializeFootprintCandle(
+      candle
+    );
+
+  const volumeProfile =
+    createVolumeProfile(
+      footprintCandle
+    );
+
   return {
     time: Math.floor(
       candle.startTime / 1_000
@@ -48,6 +65,12 @@ export function toFootprintSeriesData(
     close: candle.close,
     priceStep: candle.priceStep,
     levels: candle.levels,
-    analysis: candle.analysis
+    analysis: candle.analysis,
+
+    valueAreaHigh:
+      volumeProfile.valueAreaHigh,
+
+    valueAreaLow:
+      volumeProfile.valueAreaLow
   };
 }

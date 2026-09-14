@@ -13,10 +13,10 @@ type CanvasTarget = Parameters<
   ICustomSeriesPaneRenderer["draw"]
 >[0];
 
-const MINIMUM_BAR_SPACING = 70;
-const MINIMUM_TEXT_BAR_SPACING = 110;
+const MINIMUM_BAR_SPACING = 40;
+const MINIMUM_TEXT_BAR_SPACING = 40;
 const MINIMUM_TEXT_CELL_HEIGHT = 14;
-const CELL_WIDTH_FACTOR = 0.9;
+const CELL_WIDTH_FACTOR = 0.6;
 const IMBALANCE_MARKER_WIDTH = 3;
 const STACKED_IMBALANCE_MARKER_WIDTH = 6;
 
@@ -261,6 +261,43 @@ export class FootprintSeriesRenderer
               );
             }
           }
+
+          const valueAreaHighY =
+            priceToCoordinate(
+              candle.valueAreaHigh
+            );
+
+          const valueAreaLowY =
+            priceToCoordinate(
+              candle.valueAreaLow
+            );
+
+          const markerLeft =
+            left + totalWidth + 4;
+
+          const markerRight =
+            markerLeft + 24;
+
+          if (valueAreaHighY !== null) {
+            drawFootprintValueAreaLine(
+              context,
+              markerLeft,
+              markerRight,
+              valueAreaHighY,
+              "#38bdf8"
+            );
+          }
+
+          if (valueAreaLowY !== null) {
+            drawFootprintValueAreaLine(
+              context,
+              markerLeft,
+              markerRight,
+              valueAreaLowY,
+              "#a78bfa"
+            );
+          }
+
           drawStackedImbalanceMarkers(
             context,
             candle,
@@ -602,4 +639,34 @@ function formatVolume(
   }
 
   return volume.toFixed(3);
+}
+
+function drawFootprintValueAreaLine(
+  context:
+    CanvasRenderingContext2D,
+  left: number,
+  right: number,
+  y: number,
+  color: string
+): void {
+  context.save();
+
+  context.beginPath();
+
+  context.moveTo(
+    left,
+    y
+  );
+
+  context.lineTo(
+    right,
+    y
+  );
+
+  context.strokeStyle = color;
+  context.lineWidth = 2;
+  context.setLineDash([5, 3]);
+
+  context.stroke();
+  context.restore();
 }

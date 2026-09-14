@@ -56,8 +56,8 @@ import {
   VolumeProfilePrimitive
 } from "../charts/volumeProfile/VolumeProfilePrimitive";
 
-const FOOTPRINT_MODE_ENTER_SPACING = 80;
-const FOOTPRINT_MODE_EXIT_SPACING = 70;
+const FOOTPRINT_MODE_ENTER_SPACING = 60;
+const FOOTPRINT_MODE_EXIT_SPACING = 50;
 
 type SnapshotMessage = Extract<
   ServerMessage,

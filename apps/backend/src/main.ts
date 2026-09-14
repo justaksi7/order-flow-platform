@@ -37,7 +37,7 @@ const WEB_SOCKET_PORT = 8080;
 
 const BUFFER_CAPACITY = 1_440;
 const SNAPSHOT_CANDLE_LIMIT = 200;
-const FOOTPRINT_TICK_SIZE = 100;
+const FOOTPRINT_TICK_SIZE = 10;
 
 const marketId =
   process.env.MARKET_ID ?? "bitget-btc-usdt";
