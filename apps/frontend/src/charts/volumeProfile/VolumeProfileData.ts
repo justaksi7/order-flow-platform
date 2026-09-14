@@ -16,7 +16,7 @@ export type VolumeProfileLevelData = {
 
 export type VolumeProfileData = {
   readonly levels:
-    readonly VolumeProfileLevelData[];
+  readonly VolumeProfileLevelData[];
 
   readonly maximumLevelVolume: number;
   readonly totalVolume: number;
@@ -24,6 +24,7 @@ export type VolumeProfileData = {
   readonly pointOfControlPrice: number;
   readonly valueAreaHigh: number;
   readonly valueAreaLow: number;
+  readonly priceStep: number;
 };
 
 export function createVolumeProfileData(
@@ -72,6 +73,25 @@ export function createVolumeProfileData(
       )
     );
 
+  const firstCandle =
+    footprintCandles[0];
+
+  if (!firstCandle) {
+    return null;
+  }
+
+  for (const candle of footprintCandles) {
+    if (
+      candle.priceStep !==
+      firstCandle.priceStep
+    ) {
+      throw new Error(
+        "Volume Profile candles must use " +
+        "the same priceStep"
+      );
+    }
+  }
+
   return {
     levels,
     maximumLevelVolume,
@@ -84,6 +104,8 @@ export function createVolumeProfileData(
     valueAreaHigh:
       analysis.valueAreaHigh,
     valueAreaLow:
-      analysis.valueAreaLow
+      analysis.valueAreaLow,
+    priceStep:
+      firstCandle.priceStep
   };
 }

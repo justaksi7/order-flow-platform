@@ -12,6 +12,10 @@ export type VolumeProfileLevelRenderData = {
   readonly volumeRatio: number;
   readonly bidRatio: number;
   readonly askRatio: number;
+
+  readonly bidVolume: number;
+  readonly askVolume: number;
+
   readonly isPointOfControl: boolean;
   readonly isInsideValueArea: boolean;
 };
@@ -20,7 +24,7 @@ export class VolumeProfileRenderer
   implements IPrimitivePaneRenderer {
   private levels:
     readonly VolumeProfileLevelRenderData[] =
-      [];
+    [];
 
   public update(
     levels:
@@ -78,7 +82,7 @@ export class VolumeProfileRenderer
           );
 
           context.fillStyle =
-            `rgba(34, 197, 94, ${opacity})`;
+            `rgba(56, 189, 248, ${opacity})`;
 
           context.fillRect(
             left + bidWidth,
@@ -100,8 +104,88 @@ export class VolumeProfileRenderer
               level.height
             );
           }
+
+          const minimumTextHeight = 14;
+          const minimumSegmentWidth = 35;
+
+          if (
+            level.height >=
+            minimumTextHeight
+          ) {
+            const centerY =
+              level.top +
+              level.height / 2;
+
+            const splitX =
+              left + bidWidth;
+
+            context.font =
+              "11px ui-monospace, " +
+              "SFMono-Regular, Menlo, " +
+              "Consolas, monospace";
+
+            context.textBaseline = "middle";
+            context.fillStyle = "#f8fafc";
+
+            if (
+              bidWidth >=
+              minimumSegmentWidth
+            ) {
+              context.textAlign = "right";
+
+              context.fillText(
+                formatVolume(
+                  level.bidVolume
+                ),
+                splitX - 4,
+                centerY,
+                bidWidth - 8
+              );
+            }
+
+            if (
+              askWidth >=
+              minimumSegmentWidth
+            ) {
+              context.textAlign = "left";
+
+              context.fillText(
+                formatVolume(
+                  level.askVolume
+                ),
+                splitX + 4,
+                centerY,
+                askWidth - 8
+              );
+            }
+          }
+
         }
       }
     );
   }
+}
+
+function formatVolume(
+  volume: number
+): string {
+  if (volume === 0) {
+    return "";
+  }
+
+  if (volume >= 1_000) {
+    return `${(
+      volume / 1_000
+    ).toFixed(1)}k`;
+  }
+
+  if (volume >= 100) {
+    return volume.toFixed(0);
+  }
+
+  if (volume >= 10) {
+    return volume.toFixed(1);
+  }
+
+  return volume.toFixed(3);
 }

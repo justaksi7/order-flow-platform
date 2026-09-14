@@ -48,6 +48,14 @@ import {
   toVolumeSeriesData
 } from "../charts/volume/toVolumeSeriesData";
 
+import {
+  createVolumeProfileData
+} from "../charts/volumeProfile/VolumeProfileData";
+
+import {
+  VolumeProfilePrimitive
+} from "../charts/volumeProfile/VolumeProfilePrimitive";
+
 const FOOTPRINT_MODE_ENTER_SPACING = 80;
 const FOOTPRINT_MODE_EXIT_SPACING = 70;
 
@@ -94,9 +102,9 @@ export function PriceChart({
     );
 
   const cumulativeDeltaSeriesRef =
-  useRef<ISeriesApi<"Line"> | null>(
-    null
-  );
+    useRef<ISeriesApi<"Line"> | null>(
+      null
+    );
 
   const footprintSeriesRef =
     useRef<
@@ -111,14 +119,19 @@ export function PriceChart({
     useRef<
       ISeriesApi<"Histogram"> | null
     >(null);
-  
+
   const volumeSeriesRef =
-  useRef<
-    ISeriesApi<"Histogram"> | null
-  >(null);
+    useRef<
+      ISeriesApi<"Histogram"> | null
+    >(null);
 
   const hasFittedContentRef =
     useRef(false);
+
+  const volumeProfilePrimitiveRef =
+    useRef<VolumeProfilePrimitive | null>(
+      null
+    );
 
   useEffect(() => {
     const container = containerRef.current;
@@ -167,6 +180,15 @@ export function PriceChart({
       }
     );
 
+    const volumeProfilePrimitive =
+      new VolumeProfilePrimitive(
+        series
+      );
+
+    series.attachPrimitive(
+      volumeProfilePrimitive
+    );
+
     const footprintSeries =
       chart.addCustomSeries(
         new FootprintSeries(),
@@ -176,70 +198,70 @@ export function PriceChart({
       );
 
     const deltaHistogramSeries =
-  chart.addSeries(
-    HistogramSeries,
-    {
-      priceScaleId: "delta",
-      priceLineVisible: false,
-      lastValueVisible: false,
-      base: 0,
-      title: "Delta"
-    },
-    1
-  );
+      chart.addSeries(
+        HistogramSeries,
+        {
+          priceScaleId: "delta",
+          priceLineVisible: false,
+          lastValueVisible: false,
+          base: 0,
+          title: "Delta"
+        },
+        1
+      );
 
-deltaHistogramSeries
-  .priceScale()
-  .applyOptions({
-    scaleMargins: {
-      top: 0.65,
-      bottom: 0.05
-    }
-  });
+    deltaHistogramSeries
+      .priceScale()
+      .applyOptions({
+        scaleMargins: {
+          top: 0.65,
+          bottom: 0.05
+        }
+      });
 
     const cumulativeDeltaSeries =
       chart.addSeries(
-      LineSeries,
-      {
-      color: "#38bdf8",
-      lineWidth: 2,
-      priceLineVisible: false,
-      lastValueVisible: true,
-      crosshairMarkerVisible: true,
-      title: "CVD"
-          },
+        LineSeries,
+        {
+          color: "#38bdf8",
+          lineWidth: 2,
+          priceLineVisible: false,
+          lastValueVisible: true,
+          crosshairMarkerVisible: true,
+          title: "CVD"
+        },
         1
       );
-const panes = chart.panes();
+    const panes = chart.panes();
 
-const cumulativeDeltaPane = panes[1];
-const volumePane = panes[2];
+    const cumulativeDeltaPane = panes[1];
+    const volumePane = panes[2];
 
-if (cumulativeDeltaPane) {
-  cumulativeDeltaPane.setHeight(160);
-}
+    if (cumulativeDeltaPane) {
+      cumulativeDeltaPane.setHeight(160);
+    }
 
-if (volumePane) {
-  volumePane.setHeight(110);
-}
+    if (volumePane) {
+      volumePane.setHeight(110);
+    }
 
-if (cumulativeDeltaPane) {
-  cumulativeDeltaPane.setHeight(160);
-}
+    if (cumulativeDeltaPane) {
+      cumulativeDeltaPane.setHeight(160);
+    }
 
-const volumeSeries =
-  chart.addSeries(
-    HistogramSeries,
-    {
-      priceFormat: {
-        type: "volume"
-      },
-      priceLineVisible: false,
-      lastValueVisible: true,
-      title: "Volume"
-    },
-    2
-  );
+    const volumeSeries =
+      chart.addSeries(
+        HistogramSeries,
+        {
+          priceFormat: {
+            type: "volume"
+          },
+          priceLineVisible: false,
+          lastValueVisible: true,
+          title: "Volume"
+        },
+        2
+      );
 
     let isFootprintMode = false;
 
@@ -295,11 +317,13 @@ const volumeSeries =
     seriesRef.current = series;
     footprintSeriesRef.current = footprintSeries;
     cumulativeDeltaSeriesRef.current =
-    cumulativeDeltaSeries;
+      cumulativeDeltaSeries;
     deltaHistogramSeriesRef.current =
-    deltaHistogramSeries;
+      deltaHistogramSeries;
     volumeSeriesRef.current =
-  volumeSeries;
+      volumeSeries;
+    volumeProfilePrimitiveRef.current =
+      volumeProfilePrimitive;
 
     return () => {
       chart.timeScale()
@@ -316,6 +340,12 @@ const volumeSeries =
       cumulativeDeltaSeriesRef.current = null;
       deltaHistogramSeriesRef.current = null;
       volumeSeriesRef.current = null;
+      series.detachPrimitive(
+        volumeProfilePrimitive
+      );
+
+      volumeProfilePrimitiveRef.current =
+        null;
     };
   }, []);
 
@@ -364,63 +394,89 @@ const volumeSeries =
     );
   }, [currentCandle]);
 
-useEffect(() => {
-  const cumulativeDeltaSeries =
-    cumulativeDeltaSeriesRef.current;
+  useEffect(() => {
+    const cumulativeDeltaSeries =
+      cumulativeDeltaSeriesRef.current;
 
-  const deltaHistogramSeries =
-    deltaHistogramSeriesRef.current;
+    const deltaHistogramSeries =
+      deltaHistogramSeriesRef.current;
 
-  if (
-    !cumulativeDeltaSeries ||
-    !deltaHistogramSeries
-  ) {
-    return;
-  }
+    if (
+      !cumulativeDeltaSeries ||
+      !deltaHistogramSeries
+    ) {
+      return;
+    }
 
-  const sourceCandles =
+    const sourceCandles =
+      currentCandle
+        ? [...candles, currentCandle]
+        : candles;
+
+    cumulativeDeltaSeries.setData(
+      toCumulativeDeltaSeriesData(
+        sourceCandles
+      )
+    );
+
+    deltaHistogramSeries.setData(
+      toDeltaHistogramSeriesData(
+        sourceCandles
+      )
+    );
+  }, [
+    candles,
     currentCandle
-      ? [...candles, currentCandle]
-      : candles;
+  ]);
 
-  cumulativeDeltaSeries.setData(
-    toCumulativeDeltaSeriesData(
-      sourceCandles
-    )
-  );
+  useEffect(() => {
+    const volumeSeries =
+      volumeSeriesRef.current;
 
-  deltaHistogramSeries.setData(
-    toDeltaHistogramSeriesData(
-      sourceCandles
-    )
-  );
-}, [
-  candles,
-  currentCandle
-]);
+    if (!volumeSeries) {
+      return;
+    }
 
-useEffect(() => {
-  const volumeSeries =
-    volumeSeriesRef.current;
+    const sourceCandles =
+      currentCandle
+        ? [...candles, currentCandle]
+        : candles;
 
-  if (!volumeSeries) {
-    return;
-  }
-
-  const sourceCandles =
+    volumeSeries.setData(
+      toVolumeSeriesData(
+        sourceCandles
+      )
+    );
+  }, [
+    candles,
     currentCandle
-      ? [...candles, currentCandle]
-      : candles;
+  ]);
 
-  volumeSeries.setData(
-    toVolumeSeriesData(
-      sourceCandles
-    )
-  );
-}, [
-  candles,
-  currentCandle
-]);
+  useEffect(() => {
+    const volumeProfilePrimitive =
+      volumeProfilePrimitiveRef.current;
+
+    if (!volumeProfilePrimitive) {
+      return;
+    }
+
+    const sourceCandles =
+      currentCandle
+        ? [...candles, currentCandle]
+        : candles;
+
+    const profile =
+      createVolumeProfileData(
+        sourceCandles
+      );
+
+    volumeProfilePrimitive.setData(
+      profile
+    );
+  }, [
+    candles,
+    currentCandle
+  ]);
 
   return (
     <section>
