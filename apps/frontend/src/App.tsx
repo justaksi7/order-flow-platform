@@ -1,6 +1,14 @@
 import "./App.css";
 
 import {
+  useState
+} from "react";
+
+import type {
+  OrderFlowDisplayMode
+} from "./charts/OrderFlowDisplayMode";
+
+import {
   useOrderFlowSocket
 } from "./hooks/useOrderFlowSocket";
 
@@ -16,8 +24,16 @@ function App() {
   const {
     connectionStatus,
     candles,
-    currentCandle
+    currentCandle,
+
   } = useOrderFlowSocket(WEB_SOCKET_URL);
+
+  const [
+    displayMode,
+    setDisplayMode
+  ] = useState<OrderFlowDisplayMode>(
+    "NORMAL"
+  );
 
   return (
     <main>
@@ -34,9 +50,52 @@ function App() {
           <strong>{candles.length}</strong>
         </p>
       </section>
+
+      <div className="chart-mode-selector">
+        <button
+          type="button"
+          aria-pressed={
+            displayMode === "NORMAL"
+          }
+          onClick={() =>
+            setDisplayMode("NORMAL")
+          }
+        >
+          Normal
+        </button>
+
+        <button
+          type="button"
+          aria-pressed={
+            displayMode === "FOOTPRINT"
+          }
+          onClick={() =>
+            setDisplayMode("FOOTPRINT")
+          }
+        >
+          Footprint
+        </button>
+
+        <button
+          type="button"
+          aria-pressed={
+            displayMode ===
+            "CANDLE_VOLUME_PROFILE"
+          }
+          onClick={() =>
+            setDisplayMode(
+              "CANDLE_VOLUME_PROFILE"
+            )
+          }
+        >
+          Candle Volume Profile
+        </button>
+      </div>
+
       <PriceChart
         candles={candles}
         currentCandle={currentCandle}
+        displayMode={displayMode}
       />
     </main>
   );

@@ -56,8 +56,14 @@ import {
   VolumeProfilePrimitive
 } from "../charts/volumeProfile/VolumeProfilePrimitive";
 
-const FOOTPRINT_MODE_ENTER_SPACING = 60;
-const FOOTPRINT_MODE_EXIT_SPACING = 50;
+import {
+  CandleVolumeProfileSeries
+} from "../charts/candleVolumeProfile/CandleVolumeProfileSeries";
+
+import type {
+  OrderFlowDisplayMode
+} from "../charts/OrderFlowDisplayMode";
+
 
 type SnapshotMessage = Extract<
   ServerMessage,
@@ -70,6 +76,7 @@ type SerializedCandle =
 type PriceChartProps = {
   readonly candles: readonly SerializedCandle[];
   readonly currentCandle: SerializedCandle | null;
+  readonly displayMode: OrderFlowDisplayMode;
 };
 
 function toCandlestickData(
@@ -88,7 +95,8 @@ function toCandlestickData(
 
 export function PriceChart({
   candles,
-  currentCandle
+  currentCandle,
+  displayMode
 }: PriceChartProps) {
   const containerRef =
     useRef<HTMLDivElement>(null);
@@ -112,6 +120,16 @@ export function PriceChart({
         "Custom",
         Time,
         FootprintSeriesData | WhitespaceData<Time>
+      > | null
+    >(null);
+
+  const candleVolumeProfileSeriesRef =
+    useRef<
+      ISeriesApi<
+        "Custom",
+        Time,
+        | FootprintSeriesData
+        | WhitespaceData<Time>
       > | null
     >(null);
 
@@ -197,6 +215,14 @@ export function PriceChart({
         }
       );
 
+    const candleVolumeProfileSeries =
+      chart.addCustomSeries(
+        new CandleVolumeProfileSeries(),
+        {
+          visible: false
+        }
+      );
+
     const deltaHistogramSeries =
       chart.addSeries(
         HistogramSeries,
@@ -232,22 +258,6 @@ export function PriceChart({
         },
         1
       );
-    const panes = chart.panes();
-
-    const cumulativeDeltaPane = panes[1];
-    const volumePane = panes[2];
-
-    if (cumulativeDeltaPane) {
-      cumulativeDeltaPane.setHeight(160);
-    }
-
-    if (volumePane) {
-      volumePane.setHeight(110);
-    }
-
-    if (cumulativeDeltaPane) {
-      cumulativeDeltaPane.setHeight(160);
-    }
 
     const volumeSeries =
       chart.addSeries(
@@ -263,59 +273,24 @@ export function PriceChart({
         2
       );
 
-    let isFootprintMode = false;
+    const panes = chart.panes();
 
-    function updateChartMode(): void {
-      const barSpacing =
-        chart.timeScale()
-          .options()
-          .barSpacing;
+    const cumulativeDeltaPane = panes[1];
+    const volumePane = panes[2];
 
-      if (
-        !isFootprintMode &&
-        barSpacing >=
-        FOOTPRINT_MODE_ENTER_SPACING
-      ) {
-        isFootprintMode = true;
-
-        series.applyOptions({
-          visible: false
-        });
-
-        footprintSeries.applyOptions({
-          visible: true
-        });
-
-        return;
-      }
-
-      if (
-        isFootprintMode &&
-        barSpacing <=
-        FOOTPRINT_MODE_EXIT_SPACING
-      ) {
-        isFootprintMode = false;
-
-        series.applyOptions({
-          visible: true
-        });
-
-        footprintSeries.applyOptions({
-          visible: false
-        });
-      }
+    if (cumulativeDeltaPane) {
+      cumulativeDeltaPane.setHeight(160);
     }
 
-    chart.timeScale()
-      .subscribeVisibleLogicalRangeChange(
-        updateChartMode
-      );
-
-    updateChartMode();
+    if (volumePane) {
+      volumePane.setHeight(110);
+    }
 
     chartRef.current = chart;
     seriesRef.current = series;
     footprintSeriesRef.current = footprintSeries;
+    candleVolumeProfileSeriesRef.current =
+      candleVolumeProfileSeries;
     cumulativeDeltaSeriesRef.current =
       cumulativeDeltaSeries;
     deltaHistogramSeriesRef.current =
@@ -326,47 +301,147 @@ export function PriceChart({
       volumeProfilePrimitive;
 
     return () => {
-      chart.timeScale()
-        .unsubscribeVisibleLogicalRangeChange(
-          updateChartMode
-        );
+
+      series.detachPrimitive(
+        volumeProfilePrimitive
+      );
+
 
       chart.remove();
 
       chartRef.current = null;
       seriesRef.current = null;
       footprintSeriesRef.current = null;
+      candleVolumeProfileSeriesRef.current =
+        null;
       hasFittedContentRef.current = false;
       cumulativeDeltaSeriesRef.current = null;
       deltaHistogramSeriesRef.current = null;
       volumeSeriesRef.current = null;
-      series.detachPrimitive(
-        volumeProfilePrimitive
-      );
-
       volumeProfilePrimitiveRef.current =
         null;
     };
   }, []);
 
   useEffect(() => {
+    const chart = chartRef.current;
     const series = seriesRef.current;
+
     const footprintSeries =
       footprintSeriesRef.current;
 
-    if (!series || !footprintSeries) {
+    const candleVolumeProfileSeries =
+      candleVolumeProfileSeriesRef.current;
+
+    if (
+      !chart ||
+      !series ||
+      !footprintSeries ||
+      !candleVolumeProfileSeries
+    ) {
       return;
     }
 
-    const chartData = candles.map(
-      toCandlestickData
-    );
-    const footprintData = candles.map(
-      toFootprintSeriesData
+    const isNormal =
+      displayMode === "NORMAL";
+
+    const isFootprint =
+      displayMode === "FOOTPRINT";
+
+    const isCandleVolumeProfile =
+      displayMode ===
+      "CANDLE_VOLUME_PROFILE";
+
+    const transparent =
+      "rgba(0, 0, 0, 0)";
+
+    series.applyOptions({
+      visible: true,
+
+      upColor:
+        isNormal
+          ? "#22c55e"
+          : transparent,
+
+      downColor:
+        isNormal
+          ? "#ef4444"
+          : transparent,
+
+      wickUpColor:
+        isNormal
+          ? "#22c55e"
+          : transparent,
+
+      wickDownColor:
+        isNormal
+          ? "#ef4444"
+          : transparent
+    });
+
+    footprintSeries.applyOptions({
+      visible: isFootprint
+    });
+
+    candleVolumeProfileSeries.applyOptions({
+      visible:
+        isCandleVolumeProfile
+    });
+
+    if (!isNormal) {
+      const timeScale =
+        chart.timeScale();
+
+      const currentBarSpacing =
+        timeScale.options().barSpacing;
+
+      if (currentBarSpacing < 70) {
+        timeScale.applyOptions({
+          barSpacing: 70
+        });
+      }
+    }
+  }, [displayMode]);
+
+  useEffect(() => {
+    const series =
+      seriesRef.current;
+
+    const footprintSeries =
+      footprintSeriesRef.current;
+
+    const candleVolumeProfileSeries =
+      candleVolumeProfileSeriesRef.current;
+
+    if (
+      !series ||
+      !footprintSeries ||
+      !candleVolumeProfileSeries
+    ) {
+      return;
+    }
+
+    const chartData =
+      candles.map(
+        toCandlestickData
+      );
+
+    const footprintData =
+      candles.map(
+        toFootprintSeriesData
+      );
+
+    series.setData(
+      chartData
     );
 
-    series.setData(chartData);
-    footprintSeries.setData(footprintData);
+    footprintSeries.setData(
+      footprintData
+    );
+
+    candleVolumeProfileSeries.setData(
+      footprintData
+    );
 
     if (
       chartData.length > 0 &&
@@ -385,13 +460,25 @@ export function PriceChart({
       return;
     }
 
+    const footprintData =
+      toFootprintSeriesData(
+        currentCandle
+      );
+
     seriesRef.current?.update(
-      toCandlestickData(currentCandle)
+      toCandlestickData(
+        currentCandle
+      )
     );
 
     footprintSeriesRef.current?.update(
-      toFootprintSeriesData(currentCandle)
+      footprintData
     );
+
+    candleVolumeProfileSeriesRef.current
+      ?.update(
+        footprintData
+      );
   }, [currentCandle]);
 
   useEffect(() => {
