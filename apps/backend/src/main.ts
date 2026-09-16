@@ -44,9 +44,29 @@ import {
   createWebSocketServer
 } from "./websocket/createWebSocketServer.js";
 
+import {
+  createServer
+} from "node:http";
+
+import type {
+  Server as HttpServer
+} from "node:http";
+
+import {
+  createHttpApp
+} from "./http/createHttpApp.js";
+
+import {
+  listenHttpServer
+} from "./http/listenHttpServer.js";
+
+import {
+  closeHttpServer
+} from "./http/closeHttpServer.js";
+
 // Konfiguration
 
-const WEB_SOCKET_PORT = 8080;
+const SERVER_PORT = 8080;
 const CANDLE_RETENTION_MS =
   48 * 60 * 60 * 1_000;
 const SNAPSHOT_CANDLE_LIMIT = 200;
@@ -87,6 +107,7 @@ type MarketRuntime = {
 const provider = new BitgetMarketDataProvider();
 
 let webSocketServer: WebSocketServer | undefined;
+let httpServer: HttpServer | undefined;
 let isShuttingDown = false;
 let shutdownPromise: Promise<void> | undefined;
 
@@ -307,35 +328,53 @@ async function closeConnections(
 ): Promise<void> {
   console.log(`\n${reason}. Closing connections...`);
 
-  try {
-    await provider.disconnect();
-    console.log("Market-data connection closed.");
-  } catch (error) {
-    console.error(
-      "Error while closing market-data connection:",
-      error
-    );
-
-    process.exitCode = 1;
-  }
-
-  const server = webSocketServer;
-
-  if (server) {
-    try {
-      await closeWebSocketServer(server);
-      webSocketServer = undefined;
-
-      console.log("WebSocket server closed.");
-    } catch (error) {
-      console.error(
-        "Error while closing WebSocket server:",
-        error
-      );
-
-      process.exitCode = 1;
+  const tasks: {
+    readonly name: string;
+    readonly close: () => Promise<void>;
+  }[] = [
+    {
+      name: "Market-data connection",
+      close: () => provider.disconnect()
     }
+  ];
+
+  const activeHttpServer = httpServer;
+
+  if (activeHttpServer) {
+    tasks.push({
+      name: "HTTP server",
+      close: () => closeHttpServer(activeHttpServer)
+    });
   }
+
+  const activeWebSocketServer = webSocketServer;
+
+  if (activeWebSocketServer) {
+    tasks.push({
+      name: "WebSocket server",
+      close: () =>
+        closeWebSocketServer(activeWebSocketServer)
+    });
+  }
+
+  await Promise.all(
+    tasks.map(async (task) => {
+      try {
+        await task.close();
+        console.log(`${task.name} closed.`);
+      } catch (error) {
+        console.error(
+          `Error while closing ${task.name}:`,
+          error
+        );
+
+        process.exitCode = 1;
+      }
+    })
+  );
+
+  httpServer = undefined;
+  webSocketServer = undefined;
 }
 
 
@@ -350,8 +389,16 @@ async function main(): Promise<void> {
     );
   }
 
-  const server = createWebSocketServer({
-    port: WEB_SOCKET_PORT,
+  const app = createHttpApp({
+    getCandleBuffer: (marketId) =>
+      runtimes.get(marketId)?.candleBuffer
+  });
+
+  const server = createServer(app);
+  httpServer = server;
+
+  const socketServer = createWebSocketServer({
+    httpServer: server,
     defaultMarketId: DEFAULT_MARKET_ID,
 
     getMarketSnapshot: (marketId) => {
@@ -364,11 +411,11 @@ async function main(): Promise<void> {
       const currentCandle: CurrentCandleMessage | null =
         runtime.currentCandle
           ? {
-            type: "CURRENT_CANDLE",
-            candle: serializeAnalyzedFootprintCandle(
-              runtime.currentCandle
-            )
-          }
+              type: "CURRENT_CANDLE",
+              candle: serializeAnalyzedFootprintCandle(
+                runtime.currentCandle
+              )
+            }
           : null;
 
       return {
@@ -382,7 +429,17 @@ async function main(): Promise<void> {
     }
   });
 
-  webSocketServer = server;
+  webSocketServer = socketServer;
+
+  await listenHttpServer(server, SERVER_PORT);
+
+  console.log(
+    `HTTP and WebSocket server listening on port ${SERVER_PORT}`
+  );
+
+  if (isShuttingDown) {
+    return;
+  }
 
   await provider.connect();
 
@@ -403,7 +460,12 @@ async function main(): Promise<void> {
 
     await provider.subscribeTrades(
       runtime.market,
-      (trade) => handleTrade(trade, runtime, server)
+      (trade) =>
+        handleTrade(
+          trade,
+          runtime,
+          socketServer
+        )
     );
   }
 

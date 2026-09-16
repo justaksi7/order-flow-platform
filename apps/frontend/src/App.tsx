@@ -68,6 +68,8 @@ function App() {
 
   const {
     connectionStatus,
+    historyStatus,
+    historyError,
     candles,
     currentCandle
   } = useOrderFlowSocket(socketUrl);
@@ -252,14 +254,39 @@ function App() {
         </button>
       </div>
 
-      <PriceChart
-        key={selectedMarketId}
-        candles={displayedData.candles}
-        currentCandle={
-          displayedData.currentCandle
-        }
-        displayMode={displayMode}
-      />
+      {historyStatus === "waiting" && (
+        <p role="status">
+          {connectionStatus === "disconnected"
+            ? "Verbindung getrennt. Bitte die Seite neu laden."
+            : "Verbindung wird aufgebaut …"}
+        </p>
+      )}
+
+      {historyStatus === "loading" && (
+        <p role="status">
+          Historie wird geladen: {candles.length} Candles …
+        </p>
+      )}
+
+      {historyStatus === "error" && (
+        <p role="alert">
+          {historyError}. Die angezeigte Historie ist
+          möglicherweise unvollständig. Bitte die Seite
+          zum erneuten Laden aktualisieren.
+        </p>
+      )}
+
+      {(
+        historyStatus === "ready" ||
+        historyStatus === "error"
+      ) && (
+          <PriceChart
+            key={selectedMarketId}
+            candles={displayedData.candles}
+            currentCandle={displayedData.currentCandle}
+            displayMode={displayMode}
+          />
+        )}
     </main>
   );
 }

@@ -14,9 +14,11 @@
     "@orderflow/market-data": "0.1.0",
     "@orderflow/markets": "0.1.0",
     "@orderflow/protocol": "^0.1.0",
+    "express": "^5.2.1",
     "ws": "^8.21.3"
   },
   "devDependencies": {
+    "@types/express": "^5.0.6",
     "@types/ws": "^8.18.1",
     "tsx": "^4.20.0"
   }

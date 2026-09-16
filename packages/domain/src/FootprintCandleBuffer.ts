@@ -49,13 +49,6 @@ export class FootprintCandleBuffer {
       throw new Error("Invalid candle time range");
     }
 
-    // Dieser Buffer enthält nur abgeschlossene Candles.
-    if (candle.endTime > now) {
-      throw new Error(
-        "Cannot buffer a candle that has not ended"
-      );
-    }
-
     this.prune(now);
 
     if (candle.endTime <= now - this.retentionMs) {

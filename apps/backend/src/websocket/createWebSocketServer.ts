@@ -12,13 +12,17 @@ import {
   registerClientMarket
 } from "./broadcastServerMessage.js";
 
+import type {
+  Server as HttpServer
+} from "node:http";
+
 type MarketSnapshot = {
   readonly snapshot: SnapshotMessage;
   readonly currentCandle: CurrentCandleMessage | null;
 };
 
 type CreateWebSocketServerOptions = {
-  readonly port: number;
+  readonly httpServer: HttpServer;
   readonly defaultMarketId: string;
 
   readonly getMarketSnapshot: (
@@ -26,27 +30,14 @@ type CreateWebSocketServerOptions = {
   ) => MarketSnapshot | undefined;
 };
 
+
 export function createWebSocketServer({
-  port,
+  httpServer,
   defaultMarketId,
   getMarketSnapshot
 }: CreateWebSocketServerOptions): WebSocketServer {
-  if (
-    !Number.isInteger(port) ||
-    port <= 0 ||
-    port > 65535
-  ) {
-    throw new Error(
-      "Port must be an integer between 1 and 65535"
-    );
-  }
-
-  const server = new WebSocketServer({ port });
-
-  server.on("listening", () => {
-    console.log(
-      `WebSocket server is listening on port ${port}`
-    );
+  const server = new WebSocketServer({
+    server: httpServer
   });
 
   server.on("connection", (socket, request) => {
