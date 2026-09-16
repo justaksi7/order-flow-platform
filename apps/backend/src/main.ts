@@ -1,5 +1,6 @@
 import type {
   FootprintCandle,
+  Market,
   Trade
 } from "@orderflow/domain";
 
@@ -11,251 +12,300 @@ import {
 } from "@orderflow/domain";
 
 import {
+  BitgetMarketDataProvider
+} from "@orderflow/market-data";
+
+import {
+  getMarket
+} from "@orderflow/markets";
+
+import type {
+  CandleCompletedMessage,
+  CurrentCandleMessage
+} from "@orderflow/protocol";
+
+import type {
+  WebSocketServer
+} from "ws";
+
+import {
+  broadcastServerMessage
+} from "./websocket/broadcastServerMessage.js";
+
+import {
   closeWebSocketServer
 } from "./websocket/closeWebSocketServer.js";
 
 import {
-  BitgetMarketDataProvider
-} from "@orderflow/market-data";
-
-import { getMarket } from "@orderflow/markets";
-
-import { createWebSocketServer } from "../src/websocket/createWebSocketServer.js";
-
-import {
   createSnapshotMessage
 } from "./websocket/createSnapshotMessage.js";
-import { WebSocketServer } from "ws";
+
 import {
-  CandleCompletedMessage,
-  CurrentCandleMessage,
-} from "@orderflow/protocol";
-import { broadcastServerMessage } from "./websocket/broadcastServerMessage.js";
+  createWebSocketServer
+} from "./websocket/createWebSocketServer.js";
+
+// Konfiguration
 
 const WEB_SOCKET_PORT = 8080;
-
-
-const BUFFER_CAPACITY = 1_440;
+const CANDLE_RETENTION_MS =
+  48 * 60 * 60 * 1_000;
 const SNAPSHOT_CANDLE_LIMIT = 200;
-const FOOTPRINT_TICK_SIZE = 10;
-
-const marketId =
+const CURRENT_CANDLE_BROADCAST_INTERVAL_MS = 250;
+const DEFAULT_MARKET_ID =
   process.env.MARKET_ID ?? "bitget-btc-usdt";
 
-const market = getMarket(marketId);
+type MarketRuntimeConfig = {
+  readonly marketId: string;
+  readonly footprintPriceStep: number;
+};
+
+const MARKET_CONFIGS: readonly MarketRuntimeConfig[] = [
+  {
+    marketId: "bitget-btc-usdt",
+    footprintPriceStep: 10
+  },
+  {
+    marketId: "bitget-eth-usdt",
+    footprintPriceStep: 1
+  },
+  {
+    marketId: "bitget-xau-usdt",
+    footprintPriceStep: 1
+  }
+];
+
+// Laufzeitzustand
+
+type MarketRuntime = {
+  readonly market: Market;
+  readonly candleBuffer: FootprintCandleBuffer;
+  readonly candleBuilder: FootprintCandleBuilder;
+  currentCandle: FootprintCandle | null;
+  lastCurrentCandleBroadcastTime: number;
+};
+
 const provider = new BitgetMarketDataProvider();
 
-const candleBuffer =
-  new FootprintCandleBuffer(BUFFER_CAPACITY);
+let webSocketServer: WebSocketServer | undefined;
+let isShuttingDown = false;
+let shutdownPromise: Promise<void> | undefined;
 
-const footprintCandleBuilder =
-  new FootprintCandleBuilder(
-    market.id,
-    "1m",
-    FOOTPRINT_TICK_SIZE
+// Marktverwaltung
+
+function createMarketRuntime(
+  config: MarketRuntimeConfig
+): MarketRuntime {
+  const market = getMarket(config.marketId);
+
+  return {
+    market,
+    candleBuffer: new FootprintCandleBuffer({
+      retentionMs: CANDLE_RETENTION_MS
+    }),
+    candleBuilder: new FootprintCandleBuilder(
+      market.id,
+      "1m",
+      config.footprintPriceStep
+    ),
+    currentCandle: null,
+    lastCurrentCandleBroadcastTime: 0
+  };
+}
+
+function createMarketRuntimes(): Map<string, MarketRuntime> {
+  const runtimes = new Map<string, MarketRuntime>();
+
+  for (const config of MARKET_CONFIGS) {
+    const runtime = createMarketRuntime(config);
+    runtimes.set(runtime.market.id, runtime);
+  }
+
+  return runtimes;
+}
+
+function getSelectedMarketConfig(): MarketRuntimeConfig {
+  const marketId =
+    process.env.MARKET_ID ?? "bitget-btc-usdt";
+
+  const config = MARKET_CONFIGS.find(
+    (candidate) => candidate.marketId === marketId
   );
 
+  if (!config) {
+    throw new Error(
+      `Unsupported MARKET_ID: ${marketId}. ` +
+      `Available markets: ${MARKET_CONFIGS.map(
+        (candidate) => candidate.marketId
+      ).join(", ")
+      }`
+    );
+  }
+
+  return config;
+}
+
+// Logging
+
 function printFootprintCandle(
-  candle: FootprintCandle
+  candle: FootprintCandle,
+  market: Market
 ): void {
-  const priceDecimals =
-    market.display.priceDecimals;
+  const {
+    priceDecimals,
+    quantityDecimals
+  } = market.display;
 
-  const quantityDecimals =
-    market.display.quantityDecimals;
+  const startTime =
+    new Date(candle.startTime).toISOString();
 
-  const startTime = new Date(candle.startTime)
-    .toISOString()
-    .slice(11, 23);
+  const endTime =
+    new Date(candle.endTime).toISOString();
 
-  const endTime = new Date(candle.endTime)
-    .toISOString()
-    .slice(11, 23);
+  console.log(
+    `\n[${market.symbol}] ${startTime} – ${endTime}`
+  );
 
-  const open = candle.open
-    .toFixed(priceDecimals)
-    .padStart(12);
+  console.log(
+    `O: ${candle.open.toFixed(priceDecimals)} | ` +
+    `H: ${candle.high.toFixed(priceDecimals)} | ` +
+    `L: ${candle.low.toFixed(priceDecimals)} | ` +
+    `C: ${candle.close.toFixed(priceDecimals)} | ` +
+    `V: ${candle.volume.toFixed(quantityDecimals)} | ` +
+    `Trades: ${candle.tradeCount}`
+  );
 
-  const high = candle.high
-    .toFixed(priceDecimals)
-    .padStart(12);
+  const levels = [...candle.levels.values()].sort(
+    (first, second) => second.price - first.price
+  );
 
-  const low = candle.low
-    .toFixed(priceDecimals)
-    .padStart(12);
-
-  const close = candle.close
-    .toFixed(priceDecimals)
-    .padStart(12);
-
-  const volume = candle.volume
-    .toFixed(quantityDecimals)
-    .padStart(10);
-
-  const tradeCount = candle.tradeCount
-    .toString()
-    .padStart(6);
+  console.table(
+    levels.map((level) => ({
+      Price: level.price.toFixed(priceDecimals),
+      Bid: level.bidVolume.toFixed(quantityDecimals),
+      Ask: level.askVolume.toFixed(quantityDecimals),
+      Delta: (
+        level.askVolume - level.bidVolume
+      ).toFixed(quantityDecimals),
+      Trades: level.tradeCount
+    }))
+  );
 
   let totalBidVolume = 0;
   let totalAskVolume = 0;
 
-  for (const level of candle.levels.values()) {
+  for (const level of levels) {
     totalBidVolume += level.bidVolume;
     totalAskVolume += level.askVolume;
   }
 
-  const totalDelta =
-    totalAskVolume - totalBidVolume;
-
-  console.log("\nFOOTPRINT CANDLE");
-
   console.log(
-    `${startTime} - ${endTime} | ` +
-    `O: ${open} H: ${high} ` +
-    `L: ${low} C: ${close} ` +
-    `V: ${volume} Trades: ${tradeCount}`
-  );
-
-  console.log(
-    "       PRICE |        BID |        ASK |" +
-    "      DELTA | TRADES"
-  );
-
-  console.log(
-    "-------------|------------|------------|" +
-    "------------|-------"
-  );
-
-  const sortedLevels = [
-    ...candle.levels.values()
-  ].sort(
-    (first, second) =>
-      second.price - first.price
-  );
-
-  for (const level of sortedLevels) {
-    const price = level.price
-      .toFixed(priceDecimals)
-      .padStart(12);
-
-    const bidVolume = level.bidVolume
+    `Total Bid: ${totalBidVolume.toFixed(quantityDecimals)} | ` +
+    `Total Ask: ${totalAskVolume.toFixed(quantityDecimals)} | ` +
+    `Delta: ${(totalAskVolume - totalBidVolume)
       .toFixed(quantityDecimals)
-      .padStart(11);
+    }`
+  );
 
-    const askVolume = level.askVolume
-      .toFixed(quantityDecimals)
-      .padStart(11);
-
-    const delta = (
-      level.askVolume - level.bidVolume
-    )
-      .toFixed(quantityDecimals)
-      .padStart(11);
-
-    const levelTradeCount = level.tradeCount
-      .toString()
-      .padStart(6);
-
+  if (candle.volume > 0) {
     console.log(
-      `${price} |${bidVolume} |${askVolume} |` +
-      `${delta} |${levelTradeCount}`
+      `VWAP: ${getCandleVwap(candle).toFixed(priceDecimals)}`
     );
   }
-
-  console.log(
-    `Total Bid: ` +
-    `${totalBidVolume.toFixed(quantityDecimals)} | ` +
-    `Total Ask: ` +
-    `${totalAskVolume.toFixed(quantityDecimals)} | ` +
-    `Delta: ${totalDelta.toFixed(quantityDecimals)}`
-  );
-
-  console.log(
-    `VWAP: ${getCandleVwap(candle).toFixed(
-      priceDecimals
-    )}`
-  );
 }
-const CURRENT_CANDLE_BROADCAST_INTERVAL_MS = 250;
 
-let lastCurrentCandleBroadcastTime = 0;
+// Trade-Verarbeitung
 
 function handleTrade(
   trade: Trade,
-  webSocketServer: WebSocketServer
+  runtime: MarketRuntime,
+  server: WebSocketServer
 ): void {
-  const result =
-    footprintCandleBuilder.addTrade(trade);
+  if (isShuttingDown) {
+    return;
+  }
+
+  const result = runtime.candleBuilder.addTrade(trade);
+
+  // Immer aktualisieren, unabhängig vom Broadcast-Intervall.
+  runtime.currentCandle = result.currentCandle;
 
   if (result.completedCandle) {
-    candleBuffer.add(result.completedCandle);
-
-    const candleCompletedMessage:
-      CandleCompletedMessage = {
-      type: "CANDLE_COMPLETED",
-
-      candle:
-        serializeAnalyzedFootprintCandle(
-          result.completedCandle
-        )
-    };
-
-    broadcastServerMessage(
-      webSocketServer,
-      candleCompletedMessage
-    );
-
-    console.log(
-      `\nCandles im Buffer: ` +
-      `${candleBuffer.size}/${BUFFER_CAPACITY}`
-    );
-
-    printFootprintCandle(
-      result.completedCandle
+    handleCompletedCandle(
+      result.completedCandle,
+      runtime,
+      server
     );
   }
 
   const now = Date.now();
 
-  if (
-    now - lastCurrentCandleBroadcastTime <
-    CURRENT_CANDLE_BROADCAST_INTERVAL_MS
-  ) {
+  const intervalElapsed =
+    now - runtime.lastCurrentCandleBroadcastTime >=
+    CURRENT_CANDLE_BROADCAST_INTERVAL_MS;
+
+  // Beim Candle-Wechsel die neue Candle sofort senden.
+  if (!result.completedCandle && !intervalElapsed) {
     return;
   }
 
-  const currentCandleMessage:
-    CurrentCandleMessage = {
+  const message: CurrentCandleMessage = {
     type: "CURRENT_CANDLE",
-
-    candle:
-      serializeAnalyzedFootprintCandle(
-        result.currentCandle
-      )
+    candle: serializeAnalyzedFootprintCandle(
+      result.currentCandle
+    )
   };
 
   broadcastServerMessage(
-    webSocketServer,
-    currentCandleMessage
+    server,
+    runtime.market.id,
+    message
   );
 
-  lastCurrentCandleBroadcastTime = now;
+  runtime.lastCurrentCandleBroadcastTime = now;
 }
 
-let isShuttingDown = false;
+function handleCompletedCandle(
+  candle: FootprintCandle,
+  runtime: MarketRuntime,
+  server: WebSocketServer
+): void {
+  runtime.candleBuffer.add(candle);
 
-async function shutdown(
-  signal: string
-): Promise<void> {
-  if (isShuttingDown) {
-    return;
-  }
+  const message: CandleCompletedMessage = {
+    type: "CANDLE_COMPLETED",
+    candle: serializeAnalyzedFootprintCandle(candle)
+  };
 
-  isShuttingDown = true;
+  broadcastServerMessage(
+    server,
+    runtime.market.id,
+    message
+  );
 
   console.log(
-    `\n${signal} received. Closing connections...`
+    `[${runtime.market.symbol}] ` +
+    `Candles im 48h-Buffer: ` +
+    `${runtime.candleBuffer.size}`
   );
+
+  printFootprintCandle(candle, runtime.market);
+}
+
+// Shutdown
+
+function shutdown(reason: string): Promise<void> {
+  if (!shutdownPromise) {
+    isShuttingDown = true;
+    shutdownPromise = closeConnections(reason);
+  }
+
+  return shutdownPromise;
+}
+
+async function closeConnections(
+  reason: string
+): Promise<void> {
+  console.log(`\n${reason}. Closing connections...`);
 
   try {
     await provider.disconnect();
@@ -269,12 +319,11 @@ async function shutdown(
     process.exitCode = 1;
   }
 
-  if (webSocketServer) {
-    try {
-      await closeWebSocketServer(
-        webSocketServer
-      );
+  const server = webSocketServer;
 
+  if (server) {
+    try {
+      await closeWebSocketServer(server);
       webSocketServer = undefined;
 
       console.log("WebSocket server closed.");
@@ -289,57 +338,93 @@ async function shutdown(
   }
 }
 
-process.once(
-  "SIGINT",
-  () => void shutdown("SIGINT")
-);
 
-process.once(
-  "SIGTERM",
-  () => void shutdown("SIGTERM")
-);
-
-let webSocketServer:
-  WebSocketServer | undefined;
+// Start
 
 async function main(): Promise<void> {
-  const server = createWebSocketServer(
-    WEB_SOCKET_PORT,
-    () => createSnapshotMessage(
-      candleBuffer.getAll().slice(-SNAPSHOT_CANDLE_LIMIT)
-    )
-  );
+  const runtimes = createMarketRuntimes();
+
+  if (!runtimes.has(DEFAULT_MARKET_ID)) {
+    throw new Error(
+      `Unsupported MARKET_ID: ${DEFAULT_MARKET_ID}`
+    );
+  }
+
+  const server = createWebSocketServer({
+    port: WEB_SOCKET_PORT,
+    defaultMarketId: DEFAULT_MARKET_ID,
+
+    getMarketSnapshot: (marketId) => {
+      const runtime = runtimes.get(marketId);
+
+      if (!runtime) {
+        return undefined;
+      }
+
+      const currentCandle: CurrentCandleMessage | null =
+        runtime.currentCandle
+          ? {
+            type: "CURRENT_CANDLE",
+            candle: serializeAnalyzedFootprintCandle(
+              runtime.currentCandle
+            )
+          }
+          : null;
+
+      return {
+        snapshot: createSnapshotMessage(
+          runtime.candleBuffer
+            .getAll()
+            .slice(-SNAPSHOT_CANDLE_LIMIT)
+        ),
+        currentCandle
+      };
+    }
+  });
 
   webSocketServer = server;
 
   await provider.connect();
 
-  console.log(
-    `Connected. Subscribing to ${market.symbol} trades...`
-  );
+  if (isShuttingDown) {
+    await provider.disconnect();
+    return;
+  }
 
-  await provider.subscribeTrades(
-    market,
-    (trade) => handleTrade(
-      trade,
-      server
-    )
-  );
+  for (const runtime of runtimes.values()) {
+    if (isShuttingDown) {
+      await provider.disconnect();
+      return;
+    }
+
+    console.log(
+      `Subscribing to ${runtime.market.symbol} trades...`
+    );
+
+    await provider.subscribeTrades(
+      runtime.market,
+      (trade) => handleTrade(trade, runtime, server)
+    );
+  }
+
+  if (isShuttingDown) {
+    await provider.disconnect();
+  }
 }
+
+process.once("SIGINT", () => {
+  void shutdown("SIGINT received");
+});
+
+process.once("SIGTERM", () => {
+  void shutdown("SIGTERM received");
+});
 
 try {
   await main();
 } catch (error) {
   console.error("Backend startup failed:", error);
-
-  try {
-    await provider.disconnect();
-  } catch (disconnectError) {
-    console.error(
-      "Error while disconnecting:",
-      disconnectError
-    );
-  }
-
   process.exitCode = 1;
+
+  await shutdown("Backend startup failed");
 }

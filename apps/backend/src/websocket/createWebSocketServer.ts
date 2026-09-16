@@ -1,59 +1,108 @@
-import { WebSocketServer } from 'ws';
+import {
+  WebSocketServer
+} from "ws";
+
 import type {
-    ConnectedMessage,
-    SnapshotMessage
+  ConnectedMessage,
+  CurrentCandleMessage,
+  SnapshotMessage
 } from "@orderflow/protocol";
 
-export const createWebSocketServer = (
-    port: number,
-    getSnapshotMessage: () => SnapshotMessage
-): WebSocketServer => {
+import {
+  registerClientMarket
+} from "./broadcastServerMessage.js";
 
-    if (port <= 0 || port > 65535) {
-        throw new Error('Port number must be between 1 and 65535');
+type MarketSnapshot = {
+  readonly snapshot: SnapshotMessage;
+  readonly currentCandle: CurrentCandleMessage | null;
+};
+
+type CreateWebSocketServerOptions = {
+  readonly port: number;
+  readonly defaultMarketId: string;
+
+  readonly getMarketSnapshot: (
+    marketId: string
+  ) => MarketSnapshot | undefined;
+};
+
+export function createWebSocketServer({
+  port,
+  defaultMarketId,
+  getMarketSnapshot
+}: CreateWebSocketServerOptions): WebSocketServer {
+  if (
+    !Number.isInteger(port) ||
+    port <= 0 ||
+    port > 65535
+  ) {
+    throw new Error(
+      "Port must be an integer between 1 and 65535"
+    );
+  }
+
+  const server = new WebSocketServer({ port });
+
+  server.on("listening", () => {
+    console.log(
+      `WebSocket server is listening on port ${port}`
+    );
+  });
+
+  server.on("connection", (socket, request) => {
+    socket.on("error", (error) => {
+      console.error("WebSocket client error:", error);
+    });
+
+    let marketId: string;
+
+    try {
+      const url = new URL(
+        request.url ?? "/",
+        "http://localhost"
+      );
+
+      marketId =
+        url.searchParams.get("marketId") ??
+        defaultMarketId;
+    } catch {
+      socket.close(1008, "Invalid market URL");
+      return;
     }
 
-    const webSocketServer = new WebSocketServer({ port });
-    webSocketServer.on('listening', () => {
-        console.log(`WebSocket server is listening on port ${port}`);
+    const initialData = getMarketSnapshot(marketId);
+
+    if (!initialData) {
+      socket.close(1008, "Unknown market");
+      return;
+    }
+
+    registerClientMarket(socket, marketId);
+
+    const connectedMessage: ConnectedMessage = {
+      type: "CONNECTED",
+      message: `Connected to ${marketId}`
+    };
+
+    socket.send(JSON.stringify(connectedMessage));
+    socket.send(JSON.stringify(initialData.snapshot));
+
+    if (initialData.currentCandle) {
+      socket.send(
+        JSON.stringify(initialData.currentCandle)
+      );
+    }
+
+    console.log(
+      `WebSocket client connected: ${marketId}`
+    );
+
+    socket.on("close", () => {
+      console.log(
+        `WebSocket client disconnected: ${marketId}`
+      );
     });
+  });
 
-    webSocketServer.on("connection", (socket) => {
-        console.log("WebSocket client connected.");
-
-        const connectedMessage: ConnectedMessage = {
-            type: "CONNECTED",
-            message: "Connected to Order Flow backend"
-        };
-
-        socket.send(
-            JSON.stringify(connectedMessage)
-        );
-        const snapshotMessage = getSnapshotMessage();
-
-        socket.send(
-            JSON.stringify(snapshotMessage)
-        );
-        socket.on("message", (data) => {
-            const message = data.toString();
-
-            console.log(
-                "Message received from client:",
-                message
-            );
-        });
-
-        socket.on("close", () => {
-            console.log("WebSocket client disconnected.");
-        });
-
-        socket.on("error", (error) => {
-            console.error(
-                "WebSocket client error:",
-                error
-            );
-        });
-    });
-
-    return webSocketServer;
+  return server;
 }

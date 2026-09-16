@@ -26,52 +26,102 @@ type SnapshotMessage = Extract<
 type SerializedCandle =
   SnapshotMessage["candles"][number];
 
-export function useOrderFlowSocket(
-  url: string
-) {
-  const [
-    connectionStatus,
-    setConnectionStatus
-  ] = useState<ConnectionStatus>("connecting");
+type StreamState = {
+  readonly url: string;
+  readonly connectionStatus: ConnectionStatus;
+  readonly candles: SerializedCandle[];
+  readonly currentCandle: SerializedCandle | null;
+};
 
-  const [
-    candles,
-    setCandles
-  ] = useState<SerializedCandle[]>([]);
+const EMPTY_CANDLES: SerializedCandle[] = [];
 
-  const [
-    currentCandle,
-    setCurrentCandle
-  ] = useState<SerializedCandle | null>(null);
+function createInitialState(url: string): StreamState {
+  return {
+    url,
+    connectionStatus: "connecting",
+    candles: [],
+    currentCandle: null
+  };
+}
+
+export function useOrderFlowSocket(url: string) {
+  const [state, setState] = useState<StreamState>(
+    () => createInitialState(url)
+  );
 
   useEffect(() => {
-    setConnectionStatus("connecting");
+    let active = true;
 
-    function handleMessage(
-      message: ServerMessage
-    ): void {
-      switch (message.type) {
-        case "CONNECTED":
-          setConnectionStatus("connected");
-          break;
+    setState(createInitialState(url));
 
-        case "SNAPSHOT":
-          setCandles(message.candles.slice(-MAX_STORED_CANDLES));
-          break;
-
-        case "CURRENT_CANDLE":
-          setCurrentCandle(message.candle);
-          break;
-
-        case "CANDLE_COMPLETED":
-          setCandles((previousCandles) => [
-            ...previousCandles,
-            message.candle
-          ].slice(-MAX_STORED_CANDLES));
-
-          setCurrentCandle(null);
-          break;
+    function handleMessage(message: ServerMessage): void {
+      if (!active) {
+        return;
       }
+
+      setState((previous) => {
+        if (!active || previous.url !== url) {
+          return previous;
+        }
+
+        switch (message.type) {
+          case "CONNECTED":
+            return {
+              ...previous,
+              connectionStatus: "connected"
+            };
+
+          case "SNAPSHOT":
+            return {
+              ...previous,
+              candles: [...message.candles]
+                .sort(
+                  (first, second) =>
+                    first.startTime - second.startTime
+                )
+                .slice(-MAX_STORED_CANDLES),
+              currentCandle: null
+            };
+
+          case "CURRENT_CANDLE":
+            return {
+              ...previous,
+              currentCandle: message.candle
+            };
+
+          case "CANDLE_COMPLETED": {
+            const candles = [
+              ...previous.candles.filter(
+                (candle) =>
+                  candle.startTime !==
+                  message.candle.startTime
+              ),
+              message.candle
+            ]
+              .sort(
+                (first, second) =>
+                  first.startTime - second.startTime
+              )
+              .slice(-MAX_STORED_CANDLES);
+
+            const currentCandle =
+              previous.currentCandle &&
+              previous.currentCandle.startTime >
+                message.candle.startTime
+                ? previous.currentCandle
+                : null;
+
+            return {
+              ...previous,
+              candles,
+              currentCandle
+            };
+          }
+
+          default:
+            return previous;
+        }
+      });
     }
 
     const socket = createOrderFlowSocket(
@@ -80,30 +130,47 @@ export function useOrderFlowSocket(
     );
 
     function handleClose(): void {
-      setConnectionStatus("disconnected");
+      if (!active) {
+        return;
+      }
+
+      setState((previous) =>
+        previous.url === url
+          ? {
+              ...previous,
+              connectionStatus: "disconnected"
+            }
+          : previous
+      );
     }
 
-    socket.addEventListener(
-      "close",
-      handleClose
-    );
+    socket.addEventListener("close", handleClose);
 
     return () => {
+      active = false;
+
       socket.removeEventListener(
         "close",
         handleClose
       );
 
-      socket.close(
-        1000,
-        "Component unmounted"
-      );
+      socket.close(1000, "Market changed or unmounted");
     };
   }, [url]);
 
+  // Beim URL-Wechsel schon vor Ausführung des Effects
+  // keine Daten des vorherigen Marktes zurückgeben.
+  if (state.url !== url) {
+    return {
+      connectionStatus: "connecting" as ConnectionStatus,
+      candles: EMPTY_CANDLES,
+      currentCandle: null
+    };
+  }
+
   return {
-    connectionStatus,
-    candles,
-    currentCandle
+    connectionStatus: state.connectionStatus,
+    candles: state.candles,
+    currentCandle: state.currentCandle
   };
 }

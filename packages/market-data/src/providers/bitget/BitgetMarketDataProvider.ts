@@ -17,7 +17,7 @@ export class BitgetMarketDataProvider implements MarketDataProvider {
   private heartbeat: NodeJS.Timeout | undefined;
   private readonly subscriptions = new Map<string, Subscription>();
 
-  public constructor(private readonly url = DEFAULT_URL) {}
+  public constructor(private readonly url = DEFAULT_URL) { }
 
   public connect(): Promise<void> {
     if (this.socket?.readyState === WebSocket.OPEN) return Promise.resolve();
@@ -93,8 +93,20 @@ export class BitgetMarketDataProvider implements MarketDataProvider {
       const subscription = this.subscriptions.get(message.arg.symbol);
       if (!subscription) return;
 
-      for (const data of message.data) {
-        subscription.handler(mapBitgetTrade(data, subscription.market));
+      const trades = message.data
+        .map((data) =>
+          mapBitgetTrade(
+            data,
+            subscription.market
+          )
+        )
+        .sort(
+          (first, second) =>
+            first.timestamp - second.timestamp
+        );
+
+      for (const trade of trades) {
+        subscription.handler(trade);
       }
     } catch (error) {
       console.error("[Bitget] Could not process message:", error);

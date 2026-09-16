@@ -45,13 +45,32 @@ const TIME_FRAMES:
     "1d"
   ];
 
+const MARKETS = [
+  { id: "bitget-btc-usdt", label: "BTC / USDT" },
+  { id: "bitget-eth-usdt", label: "ETH / USDT" },
+  { id: "bitget-xau-usdt", label: "XAU / USDT" }
+] as const;
+
 function App() {
+  const [selectedMarketId, setSelectedMarketId] =
+    useState<string>("bitget-btc-usdt");
+
+  const socketUrl = useMemo(() => {
+    const url = new URL(WEB_SOCKET_URL);
+
+    url.searchParams.set(
+      "marketId",
+      selectedMarketId
+    );
+
+    return url.toString();
+  }, [selectedMarketId]);
+
   const {
     connectionStatus,
     candles,
-    currentCandle,
-
-  } = useOrderFlowSocket(WEB_SOCKET_URL);
+    currentCandle
+  } = useOrderFlowSocket(socketUrl);
 
   const [
     displayMode,
@@ -155,6 +174,23 @@ function App() {
         </p>
       </section>
 
+      <div className="market-selector">
+        {MARKETS.map((market) => (
+          <button
+            key={market.id}
+            type="button"
+            aria-pressed={
+              selectedMarketId === market.id
+            }
+            onClick={() =>
+              setSelectedMarketId(market.id)
+            }
+          >
+            {market.label}
+          </button>
+        ))}
+      </div>
+
       <div className="time-frame-selector">
         {TIME_FRAMES.map((timeFrame) => (
           <button
@@ -217,6 +253,7 @@ function App() {
       </div>
 
       <PriceChart
+        key={selectedMarketId}
         candles={displayedData.candles}
         currentCandle={
           displayedData.currentCandle
