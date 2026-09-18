@@ -46,7 +46,7 @@ export async function loadCandleHistory({
 
     if (!response.ok) {
       throw new Error(
-        `Historie konnte nicht geladen werden: HTTP ${response.status}`
+        `Market history could not be loaded: HTTP ${response.status}`
       );
     }
 
@@ -60,7 +60,7 @@ export async function loadCandleHistory({
         (candle) => candle.marketId !== marketId
       )
     ) {
-      throw new Error("Ungültige Historienantwort");
+      throw new Error("Invalid market history response");
     }
 
     if (signal.aborted) {
@@ -83,7 +83,7 @@ export async function loadCandleHistory({
       cursor !== page.candles[0]?.startTime ||
       (before !== undefined && cursor >= before)
     ) {
-      throw new Error("Ungültiger Historien-Cursor");
+      throw new Error("Invalid market history cursor");
     }
 
     before = cursor;

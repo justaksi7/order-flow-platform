@@ -162,7 +162,7 @@ export function PriceChart({ candles, currentCandle, displayMode, vwapSessions, 
         }
         const startX = chart.timeScale().timeToCoordinate(start.time);
         const endX = chart.timeScale().timeToCoordinate(point.time);
-        // Ein Rechteck braucht eine sichtbare Breite und Höhe.
+        // A rectangle needs visible width and height.
         if (startX === null || endX === null ||
           startX === endX || start.price === point.price)
           return;
@@ -496,21 +496,21 @@ export function PriceChart({ candles, currentCandle, displayMode, vwapSessions, 
       });
     }
   }, [vwapSessions, showVwap]);
-  return (<section>
-    <h2>Price Chart</h2>
+  return (<section className="price-chart-section">
     <div className="drawing-toolbar">
+      <span className="toolbar-label">Draw</span>
       <button type="button" aria-pressed={drawingTool ===
         "HORIZONTAL_LINE"} onClick={() => selectDrawingTool(drawingTool ===
           "HORIZONTAL_LINE"
           ? "CURSOR"
           : "HORIZONTAL_LINE")}>
-        Horizontale Linie
+        Horizontal line
       </button>
       <button type="button" aria-pressed={drawingTool === "RECTANGLE"} onClick={() => selectDrawingTool(drawingTool === "RECTANGLE" ? "CURSOR" : "RECTANGLE")}>
-        Rechteck
+        Rectangle
       </button>
       <button type="button" disabled={selectedDrawingId === null} onClick={removeSelectedDrawing}>
-        Ausgewählte Zeichnung löschen
+        Delete selected
       </button>
     </div>
     <div ref={containerRef} className="price-chart" style={{

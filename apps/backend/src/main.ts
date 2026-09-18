@@ -82,15 +82,15 @@ type MarketRuntimeConfig = {
 const MARKET_CONFIGS: readonly MarketRuntimeConfig[] = [
   {
     marketId: "bitget-btc-usdt",
-    footprintPriceStep: 10
+    footprintPriceStep: 100
   },
   {
     marketId: "bitget-eth-usdt",
-    footprintPriceStep: 1
+    footprintPriceStep: 10
   },
   {
     marketId: "bitget-xau-usdt",
-    footprintPriceStep: 1
+    footprintPriceStep: 10
   }
 ];
 

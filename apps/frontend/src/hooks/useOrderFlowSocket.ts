@@ -164,7 +164,7 @@ export function useOrderFlowSocket(url: string) {
           historyError:
             error instanceof Error
               ? error.message
-              : "Historie konnte nicht geladen werden"
+              : "Market history could not be loaded"
         }));
       }
     }
