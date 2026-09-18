@@ -1,4 +1,5 @@
 import "./App.css";
+import { toSessionVwapData } from "./charts/vwap/toSessionVwapData";
 
 import {
   useState,
@@ -85,6 +86,13 @@ function App() {
     selectedTimeFrame,
     setSelectedTimeFrame
   ] = useState<TimeFrame>("1m");
+
+  const [showVwap, setShowVwap] = useState(true);
+  const vwapSessions = useMemo(
+    () => toSessionVwapData(candles, currentCandle, selectedTimeFrame),
+    [candles, currentCandle, selectedTimeFrame]
+  );
+  const lateVwapSessions = vwapSessions.filter((session) => session.startsLate);
 
   const displayedData = useMemo(() => {
     const serializedSourceCandles =
@@ -254,6 +262,19 @@ function App() {
         </button>
       </div>
 
+      <label>
+        <input type="checkbox" checked={showVwap}
+          onChange={(event) => setShowVwap(event.target.checked)} />
+        VWAP
+      </label>
+      {showVwap && lateVwapSessions.length > 0 && (
+        <p role="status">
+          VWAP nur ab vorhandener Historie für: {lateVwapSessions.map((session) =>
+            new Date(session.availableFrom).toISOString().replace("T", " ").slice(0, 16) + " UTC"
+          ).join(", ")}. Für diese Tage fehlen Daten ab Tagesbeginn.
+        </p>
+      )}
+
       {historyStatus === "waiting" && (
         <p role="status">
           {connectionStatus === "disconnected"
@@ -285,6 +306,8 @@ function App() {
             candles={displayedData.candles}
             currentCandle={displayedData.currentCandle}
             displayMode={displayMode}
+            vwapSessions={vwapSessions}
+            showVwap={showVwap}
           />
         )}
     </main>
