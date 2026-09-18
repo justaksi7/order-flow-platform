@@ -1,7 +1,11 @@
 import "./App.css";
+import { PROFILE_SESSIONS, selectSessionCandles } from "./charts/volumeProfile/sessionProfile";
+import type { ProfileSession, ProfileDay } from "./charts/volumeProfile/sessionProfile";
+import { createVolumeProfileData } from "./charts/volumeProfile/VolumeProfileData";
 import { toSessionVwapData } from "./charts/vwap/toSessionVwapData";
 
 import {
+  useEffect,
   useState,
   useMemo
 } from "react";
@@ -87,12 +91,29 @@ function App() {
     setSelectedTimeFrame
   ] = useState<TimeFrame>("1m");
 
-  const [showVwap, setShowVwap] = useState(true);
+  const [showVwap, setShowVwap] = useState(false);
+  const [showVolume, setShowVolume] = useState(true);
+  const [showCvd, setShowCvd] = useState(false);
+  const [showDelta, setShowDelta] = useState(false);
+  const [showProfile, setShowProfile] = useState(false);
+  const [profileSession, setProfileSession] = useState<ProfileSession>("LONDON");
+  const [profileDay, setProfileDay] = useState<ProfileDay>("TODAY");
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 15_000);
+    return () => window.clearInterval(timer);
+  }, []);
+  const sessionSelection = useMemo(() => selectSessionCandles(
+    candles, currentCandle, profileSession, profileDay, Math.max(now, Date.now())
+  ), [candles, currentCandle, profileSession, profileDay, now]);
+  const sessionProfile = useMemo(() => showProfile
+    ? createVolumeProfileData(sessionSelection.candles) : null,
+    [showProfile, sessionSelection]);
   const vwapSessions = useMemo(
-    () => toSessionVwapData(candles, currentCandle, selectedTimeFrame),
-    [candles, currentCandle, selectedTimeFrame]
+    () => showVwap ? toSessionVwapData(candles, currentCandle, selectedTimeFrame) : [],
+    [candles, currentCandle, selectedTimeFrame, showVwap]
   );
-  const lateVwapSessions = vwapSessions.filter((session) => session.startsLate);
+
 
   const displayedData = useMemo(() => {
     const serializedSourceCandles =
@@ -267,13 +288,26 @@ function App() {
           onChange={(event) => setShowVwap(event.target.checked)} />
         VWAP
       </label>
-      {showVwap && lateVwapSessions.length > 0 && (
-        <p role="status">
-          VWAP nur ab vorhandener Historie für: {lateVwapSessions.map((session) =>
-            new Date(session.availableFrom).toISOString().replace("T", " ").slice(0, 16) + " UTC"
-          ).join(", ")}. Für diese Tage fehlen Daten ab Tagesbeginn.
-        </p>
-      )}
+      <label><input type="checkbox" checked={showVolume} onChange={(e) => setShowVolume(e.target.checked)} /> Volume</label>
+      <label><input type="checkbox" checked={showCvd} onChange={(e) => setShowCvd(e.target.checked)} /> Cumulative Delta</label>
+      <label><input type="checkbox" checked={showDelta} onChange={(e) => setShowDelta(e.target.checked)} /> Delta-Histogramm</label>
+      <fieldset>
+        <legend>Session Volume Profile</legend>
+        <label><input type="checkbox" checked={showProfile} onChange={(e) => setShowProfile(e.target.checked)} /> Anzeigen</label>
+        <label> Session <select value={profileSession} onChange={(e) => setProfileSession(e.target.value as ProfileSession)}>
+          {Object.entries(PROFILE_SESSIONS).map(([id, session]) => <option key={id} value={id}>{session.label}</option>)}
+        </select></label>
+        <label> Tag <select value={profileDay} onChange={(e) => setProfileDay(e.target.value as ProfileDay)}>
+          <option value="TODAY">Heute</option><option value="YESTERDAY">Gestern</option>
+        </select></label>
+        {showProfile && <p role="status">
+          {sessionSelection.window.label}, {sessionSelection.window.date}, {sessionSelection.window.startHour}:00–{sessionSelection.window.endHour}:00 ({sessionSelection.window.timeZone}).{" "}
+          {sessionSelection.phase === "upcoming" ? "Session hat noch nicht begonnen." :
+            !sessionProfile ? "Keine Daten für diese Session vorhanden." :
+            `${sessionSelection.phase === "live" ? "Laufende Session. " : "Beendete Session. "}${sessionSelection.candles.length} Candles. ${sessionSelection.partial ? "Datenabdeckung unvollständig; Profil nur aus vorhandenen Candles." : "Profil aus aufgezeichneten Candles; Vollständigkeit ohne Aufzeichnungsprotokoll nicht garantiert."}`}
+        </p>}
+        <small>Heute/gestern beziehen sich auf das Datum am Session-Ort. Analysefenster gelten auch am Wochenende.</small>
+      </fieldset>
 
       {historyStatus === "waiting" && (
         <p role="status">
@@ -308,6 +342,10 @@ function App() {
             displayMode={displayMode}
             vwapSessions={vwapSessions}
             showVwap={showVwap}
+            showVolume={showVolume}
+            showCvd={showCvd}
+            showDelta={showDelta}
+            sessionProfile={sessionProfile}
           />
         )}
     </main>

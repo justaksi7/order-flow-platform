@@ -31,12 +31,15 @@ export function createVolumeProfileData(
   candles:
     readonly SerializedFootprintCandle[]
 ): VolumeProfileData | null {
-  if (candles.length === 0) {
+  const usableCandles = candles.filter((candle) => candle.levels.some(
+    (level) => level.bidVolume + level.askVolume > 0
+  ));
+  if (usableCandles.length === 0) {
     return null;
   }
 
   const footprintCandles =
-    candles.map(
+    usableCandles.map(
       deserializeFootprintCandle
     );
 

@@ -8,7 +8,7 @@ import { toFootprintSeriesData } from "../charts/footprint/FootprintSeriesData";
 import type { FootprintSeriesData } from "../charts/footprint/FootprintSeriesData";
 import { toCumulativeDeltaSeriesData } from "../charts/cumulativeDelta/toCumulativeDeltaSeriesData";
 import { toVolumeSeriesData } from "../charts/volume/toVolumeSeriesData";
-import { createVolumeProfileData } from "../charts/volumeProfile/VolumeProfileData";
+import type { VolumeProfileData } from "../charts/volumeProfile/VolumeProfileData";
 import { VolumeProfilePrimitive } from "../charts/volumeProfile/VolumeProfilePrimitive";
 import { CandleVolumeProfileSeries } from "../charts/candleVolumeProfile/CandleVolumeProfileSeries";
 import type { OrderFlowDisplayMode } from "../charts/OrderFlowDisplayMode";
@@ -30,6 +30,10 @@ type PriceChartProps = {
   readonly displayMode: OrderFlowDisplayMode;
   readonly vwapSessions: readonly SessionVwapData[];
   readonly showVwap: boolean;
+  readonly showVolume: boolean;
+  readonly showCvd: boolean;
+  readonly showDelta: boolean;
+  readonly sessionProfile: VolumeProfileData | null;
 };
 function toCandlestickData(candle: SerializedCandle): CandlestickData<Time> {
   return {
@@ -40,7 +44,7 @@ function toCandlestickData(candle: SerializedCandle): CandlestickData<Time> {
     close: candle.close
   };
 }
-export function PriceChart({ candles, currentCandle, displayMode, vwapSessions, showVwap }: PriceChartProps) {
+export function PriceChart({ candles, currentCandle, displayMode, vwapSessions, showVwap, showVolume, showCvd, showDelta, sessionProfile }: PriceChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const vwapSeriesRef = useRef(new Map<number, ISeriesApi<"Line">>());
@@ -223,57 +227,11 @@ export function PriceChart({ candles, currentCandle, displayMode, vwapSessions, 
     const candleVolumeProfileSeries = chart.addCustomSeries(new CandleVolumeProfileSeries(), {
       visible: false
     });
-    const deltaHistogramSeries = chart.addSeries(HistogramSeries, {
-      priceScaleId: "delta",
-      priceLineVisible: false,
-      lastValueVisible: false,
-      base: 0,
-      title: "Delta"
-    }, 1);
-    deltaHistogramSeries
-      .priceScale()
-      .applyOptions({
-        scaleMargins: {
-          top: 0.65,
-          bottom: 0.05
-        }
-      });
-    const cumulativeDeltaSeries = chart.addSeries(LineSeries, {
-      color: "#38bdf8",
-      lineWidth: 2,
-      priceLineVisible: false,
-      lastValueVisible: true,
-      crosshairMarkerVisible: true,
-      title: "CVD"
-    }, 1);
-    const volumeSeries = chart.addSeries(HistogramSeries, {
-      priceFormat: {
-        type: "volume"
-      },
-      priceLineVisible: false,
-      lastValueVisible: true,
-      title: "Volume"
-    }, 2);
-    const panes = chart.panes();
-    const cumulativeDeltaPane = panes[1];
-    const volumePane = panes[2];
-    if (cumulativeDeltaPane) {
-      cumulativeDeltaPane.setHeight(160);
-    }
-    if (volumePane) {
-      volumePane.setHeight(110);
-    }
     chartRef.current = chart;
     seriesRef.current = series;
     footprintSeriesRef.current = footprintSeries;
     candleVolumeProfileSeriesRef.current =
       candleVolumeProfileSeries;
-    cumulativeDeltaSeriesRef.current =
-      cumulativeDeltaSeries;
-    deltaHistogramSeriesRef.current =
-      deltaHistogramSeries;
-    volumeSeriesRef.current =
-      volumeSeries;
     volumeProfilePrimitiveRef.current =
       volumeProfilePrimitive;
     return () => {
@@ -298,6 +256,42 @@ export function PriceChart({ candles, currentCandle, displayMode, vwapSessions, 
         null;
     };
   }, [selectDrawing, selectDrawingTool]);
+  // Rebuild only optional lower panes when their selection changes.
+  // Removing their series also removes empty panes; the price chart stays intact.
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+    if (volumeSeriesRef.current) chart.removeSeries(volumeSeriesRef.current);
+    if (deltaHistogramSeriesRef.current) chart.removeSeries(deltaHistogramSeriesRef.current);
+    if (cumulativeDeltaSeriesRef.current) chart.removeSeries(cumulativeDeltaSeriesRef.current);
+    volumeSeriesRef.current = null;
+    deltaHistogramSeriesRef.current = null;
+    cumulativeDeltaSeriesRef.current = null;
+    let pane = 1;
+    if (showCvd || showDelta) {
+      if (showDelta) {
+        const delta = chart.addSeries(HistogramSeries, {
+          priceScaleId: "delta", priceLineVisible: false, lastValueVisible: false,
+          base: 0, title: "Delta"
+        }, pane);
+        delta.priceScale().applyOptions({scaleMargins: {top: showCvd ? 0.65 : 0.1, bottom: 0.05}});
+        deltaHistogramSeriesRef.current = delta;
+      }
+      if (showCvd) cumulativeDeltaSeriesRef.current = chart.addSeries(LineSeries, {
+        color: "#38bdf8", lineWidth: 2, priceLineVisible: false,
+        lastValueVisible: true, crosshairMarkerVisible: true, title: "CVD"
+      }, pane);
+      chart.panes()[pane]?.setHeight(160);
+      pane += 1;
+    }
+    if (showVolume) {
+      volumeSeriesRef.current = chart.addSeries(HistogramSeries, {
+        priceFormat: {type: "volume"}, priceLineVisible: false,
+        lastValueVisible: true, title: "Volume"
+      }, pane);
+      chart.panes()[pane]?.setHeight(110);
+    }
+  }, [showCvd, showDelta, showVolume]);
   useEffect(() => {
     horizontalLinesRef.current = horizontalLines;
   }, [horizontalLines]);
@@ -441,18 +435,15 @@ export function PriceChart({ candles, currentCandle, displayMode, vwapSessions, 
   useEffect(() => {
     const cumulativeDeltaSeries = cumulativeDeltaSeriesRef.current;
     const deltaHistogramSeries = deltaHistogramSeriesRef.current;
-    if (!cumulativeDeltaSeries ||
-      !deltaHistogramSeries) {
-      return;
-    }
     const sourceCandles = currentCandle
       ? [...candles, currentCandle]
       : candles;
-    cumulativeDeltaSeries.setData(toCumulativeDeltaSeriesData(sourceCandles));
-    deltaHistogramSeries.setData(toDeltaHistogramSeriesData(sourceCandles));
+    cumulativeDeltaSeries?.setData(toCumulativeDeltaSeriesData(sourceCandles));
+    deltaHistogramSeries?.setData(toDeltaHistogramSeriesData(sourceCandles));
   }, [
     candles,
-    currentCandle
+    currentCandle,
+    showCvd, showDelta, showVolume
   ]);
   useEffect(() => {
     const volumeSeries = volumeSeriesRef.current;
@@ -465,22 +456,12 @@ export function PriceChart({ candles, currentCandle, displayMode, vwapSessions, 
     volumeSeries.setData(toVolumeSeriesData(sourceCandles));
   }, [
     candles,
-    currentCandle
+    currentCandle,
+    showCvd, showDelta, showVolume
   ]);
   useEffect(() => {
-    const volumeProfilePrimitive = volumeProfilePrimitiveRef.current;
-    if (!volumeProfilePrimitive) {
-      return;
-    }
-    const sourceCandles = currentCandle
-      ? [...candles, currentCandle]
-      : candles;
-    const profile = createVolumeProfileData(sourceCandles);
-    volumeProfilePrimitive.setData(profile);
-  }, [
-    candles,
-    currentCandle
-  ]);
+    volumeProfilePrimitiveRef.current?.setData(sessionProfile);
+  }, [sessionProfile]);
   useEffect(() => {
     const chart = chartRef.current;
     if (!chart) return;
