@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   aggregateByTimeFrame,
   deserializeFootprintCandle,
@@ -18,6 +18,7 @@ import { IndicatorControls } from "../components/IndicatorControls";
 import { MarketSelector } from "../components/MarketSelector";
 import { PriceChart } from "../components/PriceChart";
 import { SessionProfileControls } from "../components/SessionProfileControls";
+import Layout from "../components/Layout";
 
 const WEB_SOCKET_URL = import.meta.env.VITE_WEBSOCKET_URL ?? "ws://localhost:8080";
 const TIME_FRAMES: readonly TimeFrame[] = ["1m", "5m", "15m", "30m", "1h", "4h", "8h", "12h", "1d"];
@@ -28,6 +29,7 @@ const MARKETS = [
 ] as const;
 
 export function OrderFlowPage() {
+  const toolbarRef = useRef<HTMLDivElement>(null);
   const [selectedMarketId, setSelectedMarketId] = useState("bitget-btc-usdt");
   const [displayMode, setDisplayMode] = useState<OrderFlowDisplayMode>("NORMAL");
   const [selectedTimeFrame, setSelectedTimeFrame] = useState<TimeFrame>("1m");
@@ -52,6 +54,20 @@ export function OrderFlowPage() {
     return () => window.clearInterval(timer);
   }, []);
 
+  useEffect(() => {
+    const closeDropdownsOutsideToolbar = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+
+      toolbarRef.current?.querySelectorAll<HTMLDetailsElement>("details[open]").forEach((dropdown) => {
+        if (!dropdown.contains(target)) dropdown.removeAttribute("open");
+      });
+    };
+
+    document.addEventListener("pointerdown", closeDropdownsOutsideToolbar);
+    return () => document.removeEventListener("pointerdown", closeDropdownsOutsideToolbar);
+  }, []);
+
   const sessionSelection = useMemo(() => selectSessionCandles(candles, currentCandle, profileSession, profileDay, now), [candles, currentCandle, profileSession, profileDay, now]);
   const sessionProfile = useMemo(() => showProfile ? createVolumeProfileData(sessionSelection.candles) : null, [showProfile, sessionSelection]);
   const vwapSessions = useMemo(() => showVwap ? toSessionVwapData(candles, currentCandle, selectedTimeFrame) : [], [candles, currentCandle, selectedTimeFrame, showVwap]);
@@ -70,25 +86,11 @@ export function OrderFlowPage() {
   const activeMarket = MARKETS.find((market) => market.id === selectedMarketId);
 
   return (
-    <main className="app-shell">
-      <header className="app-header">
-        <div className="brand-lockup">
-          <span className="brand-mark" aria-hidden="true">OF</span>
-          <div>
-            <p className="eyebrow">Market workspace</p>
-            <h1>Order Flow</h1>
-          </div>
-        </div>
-        <div className="market-summary">
-          <span className="connection-dot" aria-hidden="true" />
-          <span>{activeMarket?.label}</span>
-          <span className="summary-divider" aria-hidden="true" />
-          <span>{selectedTimeFrame}</span>
-        </div>
-      </header>
+    <Layout>
+    <div className="app-shell">
       <ConnectionStatus historyStatus={historyStatus} historyError={historyError} />
       <section className="chart-workspace">
-        <div className="chart-toolbar">
+        <div ref={toolbarRef} className="chart-toolbar">
           <MarketSelector markets={MARKETS} selectedMarketId={selectedMarketId} onMarketChange={setSelectedMarketId} />
           <ChartControls timeFrames={TIME_FRAMES} selectedTimeFrame={selectedTimeFrame} onTimeFrameChange={setSelectedTimeFrame} displayMode={displayMode} onDisplayModeChange={setDisplayMode} />
           <details className="toolbar-dropdown">
@@ -106,13 +108,14 @@ export function OrderFlowPage() {
         </div>
         <div className="workspace-heading">
           <div>
-            <p className="eyebrow">Live analysis</p>
+            
             <h2>{activeMarket?.label} <span>/ {selectedTimeFrame}</span></h2>
           </div>
           <span className="live-badge"><span className="connection-dot" aria-hidden="true" /> Live feed</span>
         </div>
         {(historyStatus === "ready" || historyStatus === "error") && <PriceChart key={selectedMarketId} candles={displayedData.candles} currentCandle={displayedData.currentCandle} displayMode={displayMode} vwapSessions={vwapSessions} showVwap={showVwap} showVolume={showVolume} showCvd={showCvd} showDelta={showDelta} sessionProfile={sessionProfile} />}
       </section>
-    </main>
+    </div>
+    </Layout>
   );
 }
