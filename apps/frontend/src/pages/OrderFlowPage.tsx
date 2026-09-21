@@ -20,7 +20,28 @@ import { PriceChart } from "../components/PriceChart";
 import { SessionProfileControls } from "../components/SessionProfileControls";
 import Layout from "../components/Layout";
 
-const WEB_SOCKET_URL = import.meta.env.VITE_WEBSOCKET_URL ?? "ws://localhost:8080";
+function getWebSocketUrl(): string {
+  const configuredUrl =
+    import.meta.env.VITE_WEBSOCKET_URL;
+
+  if (configuredUrl) {
+    return configuredUrl;
+  }
+
+  const protocol =
+    window.location.protocol === "https:"
+      ? "wss:"
+      : "ws:";
+
+  return (
+    `${protocol}//` +
+    `${window.location.host}/ws`
+  );
+}
+
+const WEB_SOCKET_URL =
+  getWebSocketUrl();
+
 const TIME_FRAMES: readonly TimeFrame[] = ["1m", "5m", "15m", "30m", "1h", "4h", "8h", "12h", "1d"];
 const MARKETS = [
   { id: "bitget-btc-usdt", label: "BitGet BTC/USDT.P" },
@@ -87,35 +108,34 @@ export function OrderFlowPage() {
 
   return (
     <Layout>
-    <div className="app-shell">
-      <ConnectionStatus historyStatus={historyStatus} historyError={historyError} />
-      <section className="chart-workspace">
-        <div ref={toolbarRef} className="chart-toolbar">
-          <MarketSelector markets={MARKETS} selectedMarketId={selectedMarketId} onMarketChange={setSelectedMarketId} />
-          <ChartControls timeFrames={TIME_FRAMES} selectedTimeFrame={selectedTimeFrame} onTimeFrameChange={setSelectedTimeFrame} displayMode={displayMode} onDisplayModeChange={setDisplayMode} />
-          <details className="toolbar-dropdown">
-            <summary>Indicators <span className="summary-caret">⌄</span></summary>
-            <div className="dropdown-content">
-              <IndicatorControls showVwap={showVwap} showVolume={showVolume} showCvd={showCvd} showDelta={showDelta} onShowVwapChange={setShowVwap} onShowVolumeChange={setShowVolume} onShowCvdChange={setShowCvd} onShowDeltaChange={setShowDelta} />
-            </div>
-          </details>
-          <details className="toolbar-dropdown">
-            <summary>Session profile <span className="summary-caret">⌄</span></summary>
-            <div className="dropdown-content">
-              <SessionProfileControls showProfile={showProfile} profileSession={profileSession} profileDay={profileDay} onShowProfileChange={setShowProfile} onProfileSessionChange={setProfileSession} onProfileDayChange={setProfileDay} />
-            </div>
-          </details>
-        </div>
-        <div className="workspace-heading">
-          <div>
-            
-            <h2>{activeMarket?.label} <span>/ {selectedTimeFrame}</span></h2>
+      <div className="app-shell">
+        <ConnectionStatus historyStatus={historyStatus} historyError={historyError} />
+        <section className="chart-workspace">
+          <div ref={toolbarRef} className="chart-toolbar">
+            <MarketSelector markets={MARKETS} selectedMarketId={selectedMarketId} onMarketChange={setSelectedMarketId} />
+            <ChartControls timeFrames={TIME_FRAMES} selectedTimeFrame={selectedTimeFrame} onTimeFrameChange={setSelectedTimeFrame} displayMode={displayMode} onDisplayModeChange={setDisplayMode} />
+            <details className="toolbar-dropdown">
+              <summary>Indicators <span className="summary-caret">⌄</span></summary>
+              <div className="dropdown-content">
+                <IndicatorControls showVwap={showVwap} showVolume={showVolume} showCvd={showCvd} showDelta={showDelta} onShowVwapChange={setShowVwap} onShowVolumeChange={setShowVolume} onShowCvdChange={setShowCvd} onShowDeltaChange={setShowDelta} />
+              </div>
+            </details>
+            <details className="toolbar-dropdown">
+              <summary>Session profile <span className="summary-caret">⌄</span></summary>
+              <div className="dropdown-content">
+                <SessionProfileControls showProfile={showProfile} profileSession={profileSession} profileDay={profileDay} onShowProfileChange={setShowProfile} onProfileSessionChange={setProfileSession} onProfileDayChange={setProfileDay} />
+              </div>
+            </details>
           </div>
-          <span className="live-badge"><span className="connection-dot" aria-hidden="true" /> Live feed</span>
-        </div>
-        {(historyStatus === "ready" || historyStatus === "error") && <PriceChart key={selectedMarketId} candles={displayedData.candles} currentCandle={displayedData.currentCandle} displayMode={displayMode} vwapSessions={vwapSessions} showVwap={showVwap} showVolume={showVolume} showCvd={showCvd} showDelta={showDelta} sessionProfile={sessionProfile} />}
-      </section>
-    </div>
+          <div className="workspace-heading">
+            <div>
+              <h2>{activeMarket?.label} <span>/ {selectedTimeFrame}</span></h2>
+            </div>
+            <span className="live-badge"><span className="connection-dot" aria-hidden="true" /> Live feed</span>
+          </div>
+          {(historyStatus === "ready" || historyStatus === "error") && <PriceChart key={selectedMarketId} candles={displayedData.candles} currentCandle={displayedData.currentCandle} displayMode={displayMode} vwapSessions={vwapSessions} showVwap={showVwap} showVolume={showVolume} showCvd={showCvd} showDelta={showDelta} sessionProfile={sessionProfile} />}
+        </section>
+      </div>
     </Layout>
   );
 }

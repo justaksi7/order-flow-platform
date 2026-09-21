@@ -37,8 +37,9 @@ export function createWebSocketServer({
   getMarketSnapshot
 }: CreateWebSocketServerOptions): WebSocketServer {
   const server = new WebSocketServer({
-    server: httpServer
-  });
+  server: httpServer,
+  path: "/ws"
+});
 
   server.on("connection", (socket, request) => {
     socket.on("error", (error) => {

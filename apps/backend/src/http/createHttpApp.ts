@@ -44,6 +44,20 @@ export function createHttpApp({
   app.disable("x-powered-by");
 
   app.get(
+    "/api/health",
+    (_request, response) => {
+      response.setHeader(
+        "Cache-Control",
+        "no-store"
+      );
+
+      response.status(200).json({
+        status: "ok"
+      });
+    }
+  );
+
+  app.get(
     "/api/markets/:marketId/candles",
     (request, response) => {
       response.setHeader(
