@@ -4,7 +4,7 @@ services:
       context: .
       dockerfile: apps/backend/Dockerfile
 
-    image: flowlens-backend:0.1.0
+    image: tickweave-backend:0.1.0
 
     restart: unless-stopped
 
@@ -16,7 +16,7 @@ services:
       context: .
       dockerfile: apps/frontend/Dockerfile
 
-    image: flowlens-frontend:0.1.0
+    image: tickweave-frontend:0.1.0
 
     restart: unless-stopped
 

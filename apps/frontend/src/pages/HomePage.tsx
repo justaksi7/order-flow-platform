@@ -6,7 +6,7 @@ export function HomePage() {
       <div className="home-page">
         <section className="home-hero">
           <div className="home-hero-copy">
-            <p className="eyebrow">FlowLens / Control room</p>
+            <p className="eyebrow">TickWeave / Control room</p>
             <h1>Read the pressure<br /><span>behind the price.</span></h1>
             <p className="home-intro">A focused workspace for footprint candles, volume profiles and live market structure.</p>
             <a className="home-primary-action" href="/order-flow">Open order flow chart <span aria-hidden="true">-&gt;</span></a>
@@ -23,7 +23,7 @@ export function HomePage() {
             <div className="signal-footer"></div>
           </div>
         </section>
-        <section className="home-overview" aria-label="FlowLens capabilities">
+        <section className="home-overview" aria-label="TickWeave capabilities">
           <div className="home-section-heading">
             <p className="eyebrow">Workspace overview</p>
             <span>Built for decisions, not decoration.</span>

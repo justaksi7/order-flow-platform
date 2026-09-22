@@ -1,6 +1,6 @@
 services:
   backend:
-    image: ghcr.io/justaksi7/flowlens-backend:0.1.0
+    image: ghcr.io/justaksi7/tickweave-backend:0.1.0
 
     restart: unless-stopped
 
@@ -8,7 +8,7 @@ services:
       - "8080"
 
   frontend:
-    image: ghcr.io/justaksi7/flowlens-frontend:0.1.0
+    image: ghcr.io/justaksi7/tickweave-frontend:0.1.0
 
     restart: unless-stopped
 

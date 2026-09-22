@@ -42,12 +42,12 @@ jobs:
         uses: docker/metadata-action@v6
         with:
           images: >-
-            ghcr.io/${{ github.repository_owner }}/flowlens-${{ matrix.component }}
+            ghcr.io/${{ github.repository_owner }}/tickweave-${{ matrix.component }}
           tags: |
             type=raw,value=${{ inputs.version }}
             type=raw,value=latest
           labels: |
-            org.opencontainers.image.title=FlowLens ${{ matrix.component }}
+            org.opencontainers.image.title=TickWeave ${{ matrix.component }}
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
 
       - name: Set up Docker Buildx
