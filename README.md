@@ -1,13 +1,8 @@
-# Orderflow Platform
+# TickWeave Order-Flow Platform
 
-Modularer TypeScript-Startpunkt für eine persönliche Order-Flow-Plattform. Der aktuelle Stand verbindet sich ohne API-Key mit dem öffentlichen Bitget-v3-WebSocket und normalisiert Live-Trades.
+Modular TypeScript platform for live Bitget order-flow analysis. The system normalizes public trades, builds one-minute footprint candles, streams them over HTTP and WebSocket, and renders them in a React/Lightweight Charts frontend.
 
-## Voraussetzungen
-
-- Node.js 22 oder neuer
-- npm 10 oder neuer
-
-## Start
+## Quick Start
 
 ```bash
 npm install
@@ -15,33 +10,36 @@ npm run build
 npm start
 ```
 
-Standardmäßig wird `BTCUSDT` abonniert. Für ETH:
+The backend listens on port `8080` and defaults to `bitget-btc-usdt`. Start the frontend separately with:
+
+```bash
+npm run dev --workspace=@orderflow/frontend
+```
+
+To select another configured market:
 
 ```bash
 MARKET_ID=bitget-eth-usdt npm start
 ```
 
-Unter Windows PowerShell:
+PowerShell:
 
 ```powershell
 $env:MARKET_ID = "bitget-eth-usdt"
 npm start
 ```
 
-## Module
+## Documentation
 
-- `packages/domain`: Exchange-neutrale Domain-Typen (`Market`, `Trade`)
-- `packages/markets`: Zentrales Market-Registry
-- `packages/market-data`: Provider-Interface und Bitget-Implementierung
-- `apps/backend`: Aktueller Konsolen-Einstiegspunkt
+See [docs/PROJECT_DOCUMENTATION.md](docs/PROJECT_DOCUMENTATION.md) for the complete project reference, including architecture, domain calculations, HTTP and WebSocket APIs, frontend behavior, Docker deployment, configuration, development commands, and known limitations.
 
-Bitget-spezifische Nachrichten werden ausschließlich unter `packages/market-data/src/providers/bitget` verarbeitet. Alle nachgelagerten Module arbeiten mit dem normalisierten `Trade`-Interface.
+## Main Modules
 
-## Nächster Meilenstein
+- `packages/domain`: exchange-neutral models and order-flow algorithms
+- `packages/markets`: static market registry
+- `packages/market-data`: provider abstraction and Bitget implementation
+- `packages/protocol`: server WebSocket message contracts
+- `apps/backend`: HTTP/WebSocket runtime and market-data orchestration
+- `apps/frontend`: React order-flow interface and chart renderers
 
-1. Mapper und Provider testen
-2. Reconnect mit Backoff ergänzen
-3. `CandleBuilder` implementieren
-4. Trades nach Preislevel zum Footprint aggregieren
-
-Die Tick-Größen im Registry sind fürs erste MVP konfiguriert. Später sollen sie beim Start über Bitgets Instrument-Endpoint geladen und validiert werden.
+The application currently uses public Bitget USDT-futures trades and requires no API key. Runtime candle history is in memory and retained for 48 hours.
