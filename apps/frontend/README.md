@@ -1,78 +1,91 @@
-# React + TypeScript + Vite
+# TickWeave Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+The frontend is a React 19 and Vite application for viewing live Bitget order flow. It connects to the backend WebSocket for current and completed candles, loads older candles through the REST history API, and renders the result with Lightweight Charts.
 
-Currently, two official plugins are available:
+The complete platform reference is available at [../../docs/PROJECT_DOCUMENTATION.md](../../docs/PROJECT_DOCUMENTATION.md).
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Development
 
-## React Compiler
+From the repository root:
 
-The React Compiler is enabled on this template. See [this documentation](https://react.dev/learn/react-compiler) for more information.
-
-Note: This will impact Vite dev & build performances.
-You can also try [the experimental native React Compiler support in plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react/README.md#rust-react-compiler) by using `compiler: true` in the plugin options instead of using the Babel plugin.
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-
+```bash
+npm install
+npm run dev --workspace=@orderflow/frontend
 ```
 
-You can also install [eslint-plugin-react-x](https://npmx.dev/package/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://npmx.dev/package/eslint-plugin-react-dom) for React-specific lint rules:
+Build and preview the production bundle:
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-
+```bash
+npm run build --workspace=@orderflow/frontend
+npm run preview --workspace=@orderflow/frontend
 ```
+
+Run the frontend lint configuration:
+
+```bash
+npm run lint --workspace=@orderflow/frontend
+```
+
+The development server needs a running backend for live market data. The backend listens on port `8080` by default.
+
+## Routes
+
+| Route | Purpose |
+| --- | --- |
+| `/` | Static TickWeave home page and product preview |
+| `/order-flow` | Live market and order-flow chart workspace |
+
+There is no explicit not-found route.
+
+## Data Flow
+
+1. `createOrderFlowSocket` opens `/ws?marketId=<market>`.
+2. `useOrderFlowSocket` receives `CONNECTED`, `SNAPSHOT`, `CURRENT_CANDLE`, and `CANDLE_COMPLETED` messages.
+3. After the snapshot arrives, `loadCandleHistory` paginates backward through `/api/markets/:marketId/candles`.
+4. Snapshot, REST, and live candles are merged by `startTime`; newer values replace older copies.
+5. The client retains the same 48-hour window as the backend.
+6. Larger timeframes are aggregated from one-minute footprint candles in the browser.
+
+`VITE_WEBSOCKET_URL` can override the WebSocket URL at build time. Without it, the application derives a URL from the current page protocol and host.
+
+## Chart Features
+
+The order-flow page supports:
+
+- Normal candlesticks, custom footprint cells, and candle volume profiles.
+- Bid/ask intensity, level values, POC and value-area markers.
+- Diagonal and stacked imbalance markers.
+- Volume, delta histogram, cumulative delta, and VWAP panes.
+- Sydney, Tokyo, London, and New York session profiles.
+- Horizontal price lines and rectangle drawings.
+- Market selection and all domain timeframes: `1m`, `5m`, `15m`, `30m`, `1h`, `4h`, `8h`, `12h`, and `1d`.
+
+Chart drawings are held in React state and are not persisted. Non-normal display modes require additional horizontal bar spacing so footprint cells remain readable.
+
+## Source Areas
+
+```text
+src/
+  api/                       REST history loading
+  charts/                    Lightweight Charts series and primitives
+    candleVolumeProfile/     Per-candle volume-profile renderer
+    cumulativeDelta/         Delta histogram and CVD conversion
+    drawings/                Interactive chart drawings
+    footprint/               Custom footprint series and renderer
+    volume/                  Volume conversion
+    volumeProfile/           Session-profile calculation and renderer
+    vwap/                    VWAP conversion
+  components/                Chart controls, layout, selectors, and status UI
+  hooks/                     Live order-flow stream state
+  pages/                     Home and order-flow routes
+  websocket/                 Browser WebSocket construction
+```
+
+## Current Limitations
+
+- The frontend does not automatically reconnect a closed WebSocket.
+- Connection state is tracked by the stream hook but the static header indicators do not yet reflect it accurately.
+- Market definitions are duplicated from the backend registry.
+- The home page preview is static and is not connected to live data.
+- The current VWAP series accumulates from the first available candle instead of resetting independently for each session.
+- No frontend test suite is configured.
