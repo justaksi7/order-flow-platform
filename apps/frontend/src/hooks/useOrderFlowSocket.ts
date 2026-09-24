@@ -312,6 +312,7 @@ export function useOrderFlowSocket(url: string) {
 
   return {
     connectionStatus: visibleState.connectionStatus,
+    marketDataStatus: visibleState.marketDataStatus,
     historyStatus: visibleState.historyStatus,
     historyError: visibleState.historyError,
     candles: visibleState.candles,
