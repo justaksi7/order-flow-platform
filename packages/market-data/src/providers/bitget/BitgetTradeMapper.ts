@@ -1,5 +1,8 @@
 import type { Market, Trade } from "@orderflow/domain";
-import type { BitgetTradeData } from "./types.js";
+import type {
+  BitgetRestTradeData,
+  BitgetTradeData
+} from "./types.js";
 
 export function mapBitgetTrade(data: BitgetTradeData, market: Market): Trade {
   const timestamp = Number(data.T);
@@ -20,4 +23,20 @@ export function mapBitgetTrade(data: BitgetTradeData, market: Market): Trade {
     quantity,
     side: data.S === "buy" ? "BUY" : "SELL"
   };
+}
+
+export function mapBitgetRestTrade(
+  data: BitgetRestTradeData,
+  market: Market
+): Trade {
+  return mapBitgetTrade(
+    {
+      i: data.tradeId,
+      p: data.price,
+      v: data.size,
+      S: data.side,
+      T: data.ts
+    },
+    market
+  );
 }

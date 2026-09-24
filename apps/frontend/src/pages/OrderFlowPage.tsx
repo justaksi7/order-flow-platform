@@ -68,7 +68,7 @@ export function OrderFlowPage() {
     url.searchParams.set("marketId", selectedMarketId);
     return url.toString();
   }, [selectedMarketId]);
-  const { historyStatus, historyError, candles, currentCandle } = useOrderFlowSocket(socketUrl);
+  const { historyStatus, historyError, marketDataStatus, candles, currentCandle } = useOrderFlowSocket(socketUrl);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 15_000);
@@ -109,7 +109,7 @@ export function OrderFlowPage() {
   return (
     <Layout>
       <div className="app-shell">
-        <ConnectionStatus historyStatus={historyStatus} historyError={historyError} />
+        <ConnectionStatus historyStatus={historyStatus} historyError={historyError} marketDataStatus={marketDataStatus} />
         <section className="chart-workspace">
           <div ref={toolbarRef} className="chart-toolbar">
             <MarketSelector markets={MARKETS} selectedMarketId={selectedMarketId} onMarketChange={setSelectedMarketId} />

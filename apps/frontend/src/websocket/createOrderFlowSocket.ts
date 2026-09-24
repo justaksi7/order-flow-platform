@@ -18,6 +18,7 @@ function isServerMessage(
 
   return (
     type === "CONNECTED" ||
+    type === "MARKET_DATA_STATUS" ||
     type === "SNAPSHOT" ||
     type === "CURRENT_CANDLE" ||
     type === "CANDLE_COMPLETED"

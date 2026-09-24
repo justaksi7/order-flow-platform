@@ -26,6 +26,13 @@ type ConnectionStatus =
   | "connected"
   | "disconnected";
 
+type MarketDataStatus =
+  | "connecting"
+  | "connected"
+  | "disconnected"
+  | "reconnecting"
+  | "recovering";
+
 type HistoryStatus =
   | "waiting"
   | "loading"
@@ -35,6 +42,7 @@ type HistoryStatus =
 type StreamState = {
   readonly url: string;
   readonly connectionStatus: ConnectionStatus;
+  readonly marketDataStatus: MarketDataStatus;
   readonly historyStatus: HistoryStatus;
   readonly historyError: string | null;
   readonly candles: readonly Candle[];
@@ -47,6 +55,7 @@ function createInitialState(url: string): StreamState {
   return {
     url,
     connectionStatus: "connecting",
+    marketDataStatus: "connecting",
     historyStatus: "waiting",
     historyError: null,
     candles: [],
@@ -181,6 +190,17 @@ export function useOrderFlowSocket(url: string) {
           updateState((previous) => ({
             ...previous,
             connectionStatus: "connected"
+          }));
+          break;
+
+        case "MARKET_DATA_STATUS":
+          if (message.marketId !== marketId) {
+            return;
+          }
+
+          updateState((previous) => ({
+            ...previous,
+            marketDataStatus: message.status
           }));
           break;
 

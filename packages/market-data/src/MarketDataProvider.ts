@@ -2,6 +2,11 @@ import type { Market, Trade } from "@orderflow/domain";
 
 export type TradeHandler = (trade: Trade) => void;
 
+export type MarketDataStatus =
+  | "connected"
+  | "disconnected"
+  | "reconnecting";
+
 export interface MarketDataProvider {
   connect(): Promise<void>;
   disconnect(): Promise<void>;

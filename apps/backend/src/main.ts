@@ -12,7 +12,8 @@ import {
 } from "@orderflow/domain";
 
 import {
-  BitgetMarketDataProvider
+  BitgetMarketDataProvider,
+  type MarketDataStatus
 } from "@orderflow/market-data";
 
 import {
@@ -21,7 +22,8 @@ import {
 
 import type {
   CandleCompletedMessage,
-  CurrentCandleMessage
+  CurrentCandleMessage,
+  MarketDataStatusMessage
 } from "@orderflow/protocol";
 
 import type {
@@ -102,14 +104,49 @@ type MarketRuntime = {
   readonly candleBuilder: FootprintCandleBuilder;
   currentCandle: FootprintCandle | null;
   lastCurrentCandleBroadcastTime: number;
+  lastTradeTimestamp: number | undefined;
+  isRecovering: boolean;
+  queuedTrades: Trade[];
 };
-
-const provider = new BitgetMarketDataProvider();
 
 let webSocketServer: WebSocketServer | undefined;
 let httpServer: HttpServer | undefined;
 let isShuttingDown = false;
 let shutdownPromise: Promise<void> | undefined;
+let activeRuntimes = new Map<string, MarketRuntime>();
+
+function broadcastMarketDataStatus(
+  status: MarketDataStatus | "recovering"
+): void {
+  if (!webSocketServer) {
+    return;
+  }
+
+  for (const runtime of activeRuntimes.values()) {
+    const message: MarketDataStatusMessage = {
+      type: "MARKET_DATA_STATUS",
+      marketId: runtime.market.id,
+      status
+    };
+
+    broadcastServerMessage(
+      webSocketServer,
+      runtime.market.id,
+      message
+    );
+  }
+}
+
+const provider = new BitgetMarketDataProvider(
+  undefined,
+  (status) => {
+    broadcastMarketDataStatus(status);
+
+    if (status === "connected" && webSocketServer) {
+      void recoverMarketData();
+    }
+  }
+);
 
 // Marktverwaltung
 
@@ -129,7 +166,10 @@ function createMarketRuntime(
       config.footprintPriceStep
     ),
     currentCandle: null,
-    lastCurrentCandleBroadcastTime: 0
+    lastCurrentCandleBroadcastTime: 0,
+    lastTradeTimestamp: undefined,
+    isRecovering: false,
+    queuedTrades: []
   };
 }
 
@@ -245,6 +285,24 @@ function handleTrade(
     return;
   }
 
+  if (runtime.isRecovering) {
+    runtime.queuedTrades.push(trade);
+    return;
+  }
+
+  processTrade(trade, runtime, server);
+}
+
+function processTrade(
+  trade: Trade,
+  runtime: MarketRuntime,
+  server: WebSocketServer
+): void {
+  runtime.lastTradeTimestamp = Math.max(
+    runtime.lastTradeTimestamp ?? 0,
+    trade.timestamp
+  );
+
   const result = runtime.candleBuilder.addTrade(trade);
 
   // Immer aktualisieren, unabhängig vom Broadcast-Intervall.
@@ -283,6 +341,65 @@ function handleTrade(
   );
 
   runtime.lastCurrentCandleBroadcastTime = now;
+}
+
+async function recoverMarketData(): Promise<void> {
+  if (!webSocketServer || isShuttingDown) {
+    return;
+  }
+
+  const server = webSocketServer;
+  const recoveringRuntimes = [...activeRuntimes.values()];
+
+  for (const runtime of recoveringRuntimes) {
+    runtime.isRecovering = true;
+  }
+
+  broadcastMarketDataStatus("recovering");
+
+  try {
+    for (const runtime of recoveringRuntimes) {
+      const lastTradeTimestamp = runtime.lastTradeTimestamp;
+
+      if (lastTradeTimestamp === undefined) {
+        continue;
+      }
+
+      const recoveredTrades = await provider.fetchTradesSince(
+        runtime.market,
+        lastTradeTimestamp + 1
+      );
+
+      const seenTradeIds = new Set<string>();
+
+      for (const trade of recoveredTrades) {
+        if (
+          trade.timestamp <= lastTradeTimestamp ||
+          seenTradeIds.has(trade.id)
+        ) {
+          continue;
+        }
+
+        seenTradeIds.add(trade.id);
+        processTrade(trade, runtime, server);
+      }
+
+      runtime.queuedTrades
+        .sort((first, second) => first.timestamp - second.timestamp)
+        .forEach((trade) => processTrade(trade, runtime, server));
+
+      runtime.queuedTrades.length = 0;
+    }
+
+    broadcastMarketDataStatus("connected");
+  } catch (error) {
+    console.error("Market-data gap recovery failed:", error);
+    broadcastMarketDataStatus("disconnected");
+  } finally {
+    for (const runtime of recoveringRuntimes) {
+      runtime.isRecovering = false;
+    }
+  }
 }
 
 function handleCompletedCandle(
@@ -382,6 +499,7 @@ async function closeConnections(
 
 async function main(): Promise<void> {
   const runtimes = createMarketRuntimes();
+  activeRuntimes = runtimes;
 
   if (!runtimes.has(DEFAULT_MARKET_ID)) {
     throw new Error(

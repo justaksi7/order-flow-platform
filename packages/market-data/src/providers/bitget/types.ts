@@ -12,6 +12,14 @@ export interface BitgetTradeData {
   readonly T: string;
 }
 
+export interface BitgetRestTradeData {
+  readonly tradeId: string;
+  readonly price: string;
+  readonly size: string;
+  readonly side: "buy" | "sell";
+  readonly ts: string;
+}
+
 export interface BitgetTradeMessage {
   readonly arg: BitgetSubscriptionArg;
   readonly action: "snapshot" | "update";

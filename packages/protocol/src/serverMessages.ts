@@ -7,6 +7,19 @@ export type ConnectedMessage = {
   readonly message: string;
 };
 
+export type MarketDataStatus =
+  | "connecting"
+  | "connected"
+  | "disconnected"
+  | "reconnecting"
+  | "recovering";
+
+export type MarketDataStatusMessage = {
+  readonly type: "MARKET_DATA_STATUS";
+  readonly marketId: string;
+  readonly status: MarketDataStatus;
+};
+
 export type SnapshotMessage = {
   readonly type: "SNAPSHOT";
 
@@ -30,6 +43,7 @@ export type CurrentCandleMessage = {
 
 export type ServerMessage =
   | ConnectedMessage
+  | MarketDataStatusMessage
   | CandleCompletedMessage
   | CurrentCandleMessage
   | SnapshotMessage;

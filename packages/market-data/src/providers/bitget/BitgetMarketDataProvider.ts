@@ -1,11 +1,27 @@
-import type { Market } from "@orderflow/domain";
+import type { Market, Trade } from "@orderflow/domain";
 import WebSocket, { type RawData } from "ws";
-import type { MarketDataProvider, TradeHandler } from "../../MarketDataProvider.js";
-import { mapBitgetTrade } from "./BitgetTradeMapper.js";
-import type { BitgetEventMessage, BitgetSubscriptionArg, BitgetTradeMessage } from "./types.js";
+import type {
+  MarketDataProvider,
+  MarketDataStatus,
+  TradeHandler
+} from "../../MarketDataProvider.js";
+import {
+  mapBitgetRestTrade,
+  mapBitgetTrade
+} from "./BitgetTradeMapper.js";
+import type {
+  BitgetEventMessage,
+  BitgetRestTradeData,
+  BitgetSubscriptionArg,
+  BitgetTradeData,
+  BitgetTradeMessage
+} from "./types.js";
 
 const DEFAULT_URL = "wss://ws.bitget.com/v3/ws/public";
+const DEFAULT_REST_URL = "https://api.bitget.com/api/v2/mix/market/fills";
 const HEARTBEAT_INTERVAL_MS = 30_000;
+const HEARTBEAT_TIMEOUT_MS = 90_000;
+const TRADE_RECOVERY_PAGE_SIZE = 100;
 
 interface Subscription {
   readonly market: Market;
@@ -15,18 +31,38 @@ interface Subscription {
 export class BitgetMarketDataProvider implements MarketDataProvider {
   private socket: WebSocket | undefined;
   private heartbeat: NodeJS.Timeout | undefined;
+  private reconnectTimer: NodeJS.Timeout | undefined;
+  private reconnectAttempt = 0;
+  private isDisconnectRequested = false;
+  private lastPongAt = 0;
   private readonly subscriptions = new Map<string, Subscription>();
 
-  public constructor(private readonly url = DEFAULT_URL) { }
+  public constructor(
+    private readonly url = DEFAULT_URL,
+    private readonly onStatus?: (status: MarketDataStatus) => void
+  ) { }
 
   public connect(): Promise<void> {
-    if (this.socket?.readyState === WebSocket.OPEN) return Promise.resolve();
+    this.isDisconnectRequested = false;
+    this.clearReconnectTimer();
+
+    if (this.socket?.readyState === WebSocket.OPEN) {
+      return Promise.resolve();
+    }
 
     return new Promise((resolve, reject) => {
       const socket = new WebSocket(this.url);
       this.socket = socket;
 
-      const rejectConnection = (error: Error): void => reject(error);
+      const rejectConnection = (error: Error): void => {
+        socket.removeAllListeners();
+
+        if (this.socket === socket) {
+          this.socket = undefined;
+        }
+
+        reject(error);
+      };
       socket.once("error", rejectConnection);
 
       socket.once("open", () => {
@@ -35,12 +71,21 @@ export class BitgetMarketDataProvider implements MarketDataProvider {
         socket.on("close", (code, reason) => this.handleClose(code, reason.toString()));
         socket.on("message", (raw) => this.handleMessage(raw));
         this.startHeartbeat();
+        this.reconnectAttempt = 0;
+        this.onStatus?.("connected");
+
+        for (const subscription of this.subscriptions.values()) {
+          this.send("subscribe", subscription.market);
+        }
+
         resolve();
       });
     });
   }
 
   public async disconnect(): Promise<void> {
+    this.isDisconnectRequested = true;
+    this.clearReconnectTimer();
     this.stopHeartbeat();
     const socket = this.socket;
     this.socket = undefined;
@@ -65,6 +110,97 @@ export class BitgetMarketDataProvider implements MarketDataProvider {
     this.subscriptions.delete(market.symbol);
   }
 
+  public async fetchTradesSince(
+    market: Market,
+    since: number
+  ): Promise<readonly Trade[]> {
+    const recoveredTrades = new Map<string, Trade>();
+    const seenPageTradeIds = new Set<string>();
+    let idLessThan: string | undefined;
+
+    while (true) {
+      const query = new URLSearchParams({
+        productType: "USDT-FUTURES",
+        symbol: market.symbol,
+        limit: String(TRADE_RECOVERY_PAGE_SIZE)
+      });
+
+      if (idLessThan !== undefined) {
+        query.set("idLessThan", idLessThan);
+      }
+
+      const response = await fetch(
+        `${DEFAULT_REST_URL}?${query.toString()}`,
+        { cache: "no-store" }
+      );
+
+      if (!response.ok) {
+        throw new Error(
+          `Bitget trade recovery failed: HTTP ${response.status}`
+        );
+      }
+
+      const payload: unknown = await response.json();
+
+      if (!this.isTradeHistoryResponse(payload)) {
+        throw new Error("Bitget trade recovery returned an invalid response");
+      }
+
+      const page = payload.data.map((data) => mapBitgetRestTrade(data, market));
+      let hasRepeatedTrade = false;
+
+      for (const trade of page) {
+        if (seenPageTradeIds.has(trade.id)) {
+          hasRepeatedTrade = true;
+        }
+
+        seenPageTradeIds.add(trade.id);
+
+        if (trade.timestamp >= since) {
+          recoveredTrades.set(trade.id, trade);
+        }
+      }
+
+      if (hasRepeatedTrade) {
+        break;
+      }
+
+      if (page.length < TRADE_RECOVERY_PAGE_SIZE) {
+        break;
+      }
+
+      const firstTrade = page[0];
+
+      if (!firstTrade) {
+        break;
+      }
+
+      const oldestTrade = page.reduce(
+        (oldest, trade) =>
+          BigInt(trade.id) < BigInt(oldest.id)
+            ? trade
+            : oldest,
+        firstTrade
+      );
+
+      if (oldestTrade.timestamp <= since) {
+        break;
+      }
+
+      const nextIdLessThan = oldestTrade.id;
+
+      if (idLessThan === nextIdLessThan) {
+        throw new Error("Bitget trade recovery cursor did not advance");
+      }
+
+      idLessThan = nextIdLessThan;
+    }
+
+    return [...recoveredTrades.values()].sort(
+      (first, second) => first.timestamp - second.timestamp
+    );
+  }
+
   private send(op: "subscribe" | "unsubscribe", market: Market): void {
     const arg: BitgetSubscriptionArg = {
       instType: "usdt-futures",
@@ -76,7 +212,10 @@ export class BitgetMarketDataProvider implements MarketDataProvider {
 
   private handleMessage(raw: RawData): void {
     const text = raw.toString();
-    if (text === "pong") return;
+    if (text === "pong") {
+      this.lastPongAt = Date.now();
+      return;
+    }
 
     try {
       const message: unknown = JSON.parse(text);
@@ -121,10 +260,42 @@ export class BitgetMarketDataProvider implements MarketDataProvider {
     return typeof value === "object" && value !== null && "arg" in value && "data" in value && Array.isArray(value.data);
   }
 
+  private isTradeHistoryResponse(
+    value: unknown
+  ): value is { readonly data: readonly BitgetRestTradeData[] } {
+    if (typeof value !== "object" || value === null || !("data" in value)) {
+      return false;
+    }
+
+    const data = (value as { data?: unknown }).data;
+
+    return Array.isArray(data) && data.every(
+      (item) =>
+        typeof item === "object" &&
+        item !== null &&
+        "tradeId" in item &&
+        "price" in item &&
+        "size" in item &&
+        "side" in item &&
+        "ts" in item
+    );
+  }
+
   private startHeartbeat(): void {
     this.stopHeartbeat();
+    this.lastPongAt = Date.now();
     this.heartbeat = setInterval(() => {
-      if (this.socket?.readyState === WebSocket.OPEN) this.socket.send("ping");
+      if (this.socket?.readyState !== WebSocket.OPEN) {
+        return;
+      }
+
+      if (Date.now() - this.lastPongAt > HEARTBEAT_TIMEOUT_MS) {
+        console.error("[Bitget] Heartbeat timeout; reconnecting.");
+        this.socket.terminate();
+        return;
+      }
+
+      this.socket.send("ping");
     }, HEARTBEAT_INTERVAL_MS);
   }
 
@@ -136,6 +307,44 @@ export class BitgetMarketDataProvider implements MarketDataProvider {
   private handleClose(code: number, reason: string): void {
     this.stopHeartbeat();
     console.log(`[Bitget] disconnected (${code}${reason ? `: ${reason}` : ""})`);
+
+    if (this.isDisconnectRequested) {
+      return;
+    }
+
+    this.socket = undefined;
+    this.onStatus?.("disconnected");
+    this.scheduleReconnect();
+  }
+
+  private scheduleReconnect(): void {
+    if (this.isDisconnectRequested || this.reconnectTimer) {
+      return;
+    }
+
+    this.onStatus?.("reconnecting");
+
+    const delay = Math.min(
+      30_000,
+      1_000 * 2 ** Math.min(this.reconnectAttempt, 5)
+    );
+
+    this.reconnectAttempt += 1;
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = undefined;
+
+      void this.connect().catch((error) => {
+        console.error("[Bitget] Reconnect failed:", error);
+        this.scheduleReconnect();
+      });
+    }, delay);
+  }
+
+  private clearReconnectTimer(): void {
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = undefined;
+    }
   }
 
   private assertConnected(): void {
