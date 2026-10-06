@@ -66,6 +66,10 @@ import {
   closeHttpServer
 } from "./http/closeHttpServer.js";
 
+import {
+  CandleBufferPersistence
+} from "./persistence/CandleBufferPersistence.js";
+
 // Konfiguration
 
 const SERVER_PORT = 8080;
@@ -75,6 +79,8 @@ const SNAPSHOT_CANDLE_LIMIT = 200;
 const CURRENT_CANDLE_BROADCAST_INTERVAL_MS = 250;
 const DEFAULT_MARKET_ID =
   process.env.MARKET_ID ?? "bitget-btc-usdt";
+const CANDLE_DATA_DIRECTORY =
+  process.env.CANDLE_DATA_DIRECTORY ?? "data/markets";
 
 type MarketRuntimeConfig = {
   readonly marketId: string;
@@ -84,15 +90,15 @@ type MarketRuntimeConfig = {
 const MARKET_CONFIGS: readonly MarketRuntimeConfig[] = [
   {
     marketId: "bitget-btc-usdt",
-    footprintPriceStep: 100
+    footprintPriceStep: 50
   },
   {
     marketId: "bitget-eth-usdt",
-    footprintPriceStep: 10
+    footprintPriceStep: 5
   },
   {
     marketId: "bitget-xau-usdt",
-    footprintPriceStep: 10
+    footprintPriceStep: 5
   }
 ];
 
@@ -148,6 +154,10 @@ const provider = new BitgetMarketDataProvider(
   }
 );
 
+const candlePersistence = new CandleBufferPersistence(
+  CANDLE_DATA_DIRECTORY
+);
+
 // Marktverwaltung
 
 function createMarketRuntime(
@@ -182,6 +192,26 @@ function createMarketRuntimes(): Map<string, MarketRuntime> {
   }
 
   return runtimes;
+}
+
+async function restoreCandleBuffers(
+  runtimes: Map<string, MarketRuntime>
+): Promise<void> {
+  for (const runtime of runtimes.values()) {
+    const candles = await candlePersistence.load(
+      runtime.market.id
+    );
+
+    for (const candle of candles) {
+      runtime.candleBuffer.add(candle);
+    }
+
+    const latestCandle = runtime.candleBuffer.getLatest();
+
+    if (latestCandle) {
+      runtime.lastTradeTimestamp = latestCandle.endTime - 1;
+    }
+  }
 }
 
 function getSelectedMarketConfig(): MarketRuntimeConfig {
@@ -296,7 +326,8 @@ function handleTrade(
 function processTrade(
   trade: Trade,
   runtime: MarketRuntime,
-  server: WebSocketServer
+  server: WebSocketServer,
+  shouldBroadcast = true
 ): void {
   runtime.lastTradeTimestamp = Math.max(
     runtime.lastTradeTimestamp ?? 0,
@@ -312,8 +343,13 @@ function processTrade(
     handleCompletedCandle(
       result.completedCandle,
       runtime,
-      server
+      server,
+      shouldBroadcast
     );
+  }
+
+  if (!shouldBroadcast) {
+    return;
   }
 
   const now = Date.now();
@@ -361,34 +397,64 @@ async function recoverMarketData(): Promise<void> {
     for (const runtime of recoveringRuntimes) {
       const lastTradeTimestamp = runtime.lastTradeTimestamp;
 
-      if (lastTradeTimestamp === undefined) {
-        continue;
-      }
+      const recoveryStartTimestamp =
+        lastTradeTimestamp ??
+        Date.now() - CANDLE_RETENTION_MS;
 
       const recoveredTrades = await provider.fetchTradesSince(
         runtime.market,
-        lastTradeTimestamp + 1
+        recoveryStartTimestamp + 1
       );
 
       const seenTradeIds = new Set<string>();
+      const tradesToProcess = [
+        ...recoveredTrades,
+        ...runtime.queuedTrades
+      ].sort(
+        (first, second) => first.timestamp - second.timestamp
+      );
 
-      for (const trade of recoveredTrades) {
+      for (const trade of tradesToProcess) {
         if (
-          trade.timestamp <= lastTradeTimestamp ||
+          trade.timestamp <= recoveryStartTimestamp ||
           seenTradeIds.has(trade.id)
         ) {
           continue;
         }
 
         seenTradeIds.add(trade.id);
-        processTrade(trade, runtime, server);
+          processTrade(
+            trade,
+            runtime,
+            server,
+            false
+          );
       }
 
-      runtime.queuedTrades
-        .sort((first, second) => first.timestamp - second.timestamp)
-        .forEach((trade) => processTrade(trade, runtime, server));
-
       runtime.queuedTrades.length = 0;
+
+        broadcastServerMessage(
+          server,
+          runtime.market.id,
+          createSnapshotMessage(
+            runtime.candleBuffer
+              .getAll()
+              .slice(-SNAPSHOT_CANDLE_LIMIT)
+          )
+        );
+
+        if (runtime.currentCandle) {
+          broadcastServerMessage(
+            server,
+            runtime.market.id,
+            {
+              type: "CURRENT_CANDLE",
+              candle: serializeAnalyzedFootprintCandle(
+                runtime.currentCandle
+              )
+            }
+          );
+        }
     }
 
     broadcastMarketDataStatus("connected");
@@ -405,9 +471,24 @@ async function recoverMarketData(): Promise<void> {
 function handleCompletedCandle(
   candle: FootprintCandle,
   runtime: MarketRuntime,
-  server: WebSocketServer
+  server: WebSocketServer,
+  shouldBroadcast = true
 ): void {
   runtime.candleBuffer.add(candle);
+
+  void candlePersistence.save(
+    runtime.market.id,
+    runtime.candleBuffer.getAll()
+  ).catch((error) => {
+    console.error(
+      `[${runtime.market.symbol}] Could not persist candle buffer:`,
+      error
+    );
+  });
+
+  if (!shouldBroadcast) {
+    return;
+  }
 
   const message: CandleCompletedMessage = {
     type: "CANDLE_COMPLETED",
@@ -426,7 +507,7 @@ function handleCompletedCandle(
     `${runtime.candleBuffer.size}`
   );
 
-  printFootprintCandle(candle, runtime.market);
+  // printFootprintCandle(candle, runtime.market);
 }
 
 // Shutdown
@@ -500,6 +581,8 @@ async function closeConnections(
 async function main(): Promise<void> {
   const runtimes = createMarketRuntimes();
   activeRuntimes = runtimes;
+
+  await restoreCandleBuffers(runtimes);
 
   if (!runtimes.has(DEFAULT_MARKET_ID)) {
     throw new Error(

@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { Layers3, SlidersHorizontal } from "lucide-react";
 import {
   aggregateByTimeFrame,
   deserializeFootprintCandle,
@@ -18,6 +19,9 @@ import { IndicatorControls } from "../components/IndicatorControls";
 import { MarketSelector } from "../components/MarketSelector";
 import { PriceChart } from "../components/PriceChart";
 import { SessionProfileControls } from "../components/SessionProfileControls";
+import { Badge } from "../components/ui/badge";
+import { Button } from "../components/ui/button";
+import { Popover, PopoverContent, PopoverTrigger } from "../components/ui/popover";
 import Layout from "../components/Layout";
 
 function getWebSocketUrl(): string {
@@ -50,7 +54,6 @@ const MARKETS = [
 ] as const;
 
 export function OrderFlowPage() {
-  const toolbarRef = useRef<HTMLDivElement>(null);
   const [selectedMarketId, setSelectedMarketId] = useState("bitget-btc-usdt");
   const [displayMode, setDisplayMode] = useState<OrderFlowDisplayMode>("NORMAL");
   const [selectedTimeFrame, setSelectedTimeFrame] = useState<TimeFrame>("1m");
@@ -75,20 +78,6 @@ export function OrderFlowPage() {
     return () => window.clearInterval(timer);
   }, []);
 
-  useEffect(() => {
-    const closeDropdownsOutsideToolbar = (event: PointerEvent) => {
-      const target = event.target;
-      if (!(target instanceof Node)) return;
-
-      toolbarRef.current?.querySelectorAll<HTMLDetailsElement>("details[open]").forEach((dropdown) => {
-        if (!dropdown.contains(target)) dropdown.removeAttribute("open");
-      });
-    };
-
-    document.addEventListener("pointerdown", closeDropdownsOutsideToolbar);
-    return () => document.removeEventListener("pointerdown", closeDropdownsOutsideToolbar);
-  }, []);
-
   const sessionSelection = useMemo(() => selectSessionCandles(candles, currentCandle, profileSession, profileDay, now), [candles, currentCandle, profileSession, profileDay, now]);
   const sessionProfile = useMemo(() => showProfile ? createVolumeProfileData(sessionSelection.candles) : null, [showProfile, sessionSelection]);
   const vwapSessions = useMemo(() => showVwap ? toSessionVwapData(candles, currentCandle, selectedTimeFrame) : [], [candles, currentCandle, selectedTimeFrame, showVwap]);
@@ -111,27 +100,31 @@ export function OrderFlowPage() {
       <div className="app-shell">
         <ConnectionStatus historyStatus={historyStatus} historyError={historyError} marketDataStatus={marketDataStatus} />
         <section className="chart-workspace">
-          <div ref={toolbarRef} className="chart-toolbar">
+          <div className="chart-toolbar">
             <MarketSelector markets={MARKETS} selectedMarketId={selectedMarketId} onMarketChange={setSelectedMarketId} />
             <ChartControls timeFrames={TIME_FRAMES} selectedTimeFrame={selectedTimeFrame} onTimeFrameChange={setSelectedTimeFrame} displayMode={displayMode} onDisplayModeChange={setDisplayMode} />
-            <details className="toolbar-dropdown">
-              <summary>Indicators <span className="summary-caret">⌄</span></summary>
-              <div className="dropdown-content">
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="outline" size="sm"><SlidersHorizontal size={14} /> Indicators</Button>
+              </PopoverTrigger>
+              <PopoverContent className="toolbar-popover">
                 <IndicatorControls showVwap={showVwap} showVolume={showVolume} showCvd={showCvd} showDelta={showDelta} onShowVwapChange={setShowVwap} onShowVolumeChange={setShowVolume} onShowCvdChange={setShowCvd} onShowDeltaChange={setShowDelta} />
-              </div>
-            </details>
-            <details className="toolbar-dropdown">
-              <summary>Session profile <span className="summary-caret">⌄</span></summary>
-              <div className="dropdown-content">
+              </PopoverContent>
+            </Popover>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="outline" size="sm"><Layers3 size={14} /> Session profile</Button>
+              </PopoverTrigger>
+              <PopoverContent className="toolbar-popover">
                 <SessionProfileControls showProfile={showProfile} profileSession={profileSession} profileDay={profileDay} onShowProfileChange={setShowProfile} onProfileSessionChange={setProfileSession} onProfileDayChange={setProfileDay} />
-              </div>
-            </details>
+              </PopoverContent>
+            </Popover>
           </div>
           <div className="workspace-heading">
             <div>
               <h2>{activeMarket?.label} <span>/ {selectedTimeFrame}</span></h2>
             </div>
-            <span className="live-badge"><span className="connection-dot" aria-hidden="true" /> Live feed</span>
+            <Badge><span className="connection-dot" aria-hidden="true" /> Live feed</Badge>
           </div>
           {(historyStatus === "ready" || historyStatus === "error") && <PriceChart key={selectedMarketId} candles={displayedData.candles} currentCandle={displayedData.currentCandle} displayMode={displayMode} vwapSessions={vwapSessions} showVwap={showVwap} showVolume={showVolume} showCvd={showCvd} showDelta={showDelta} sessionProfile={sessionProfile} />}
         </section>

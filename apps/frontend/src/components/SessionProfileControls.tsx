@@ -1,5 +1,8 @@
 import { PROFILE_SESSIONS } from "../charts/volumeProfile/sessionProfile";
 import type { ProfileDay, ProfileSession } from "../charts/volumeProfile/sessionProfile";
+import { Label } from "./ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
+import { Switch } from "./ui/switch";
 
 type SessionProfileControlsProps = {
   readonly showProfile: boolean;
@@ -12,16 +15,17 @@ type SessionProfileControlsProps = {
 
 export function SessionProfileControls({ showProfile, profileSession, profileDay, onShowProfileChange, onProfileSessionChange, onProfileDayChange }: SessionProfileControlsProps) {
   return (
-    <fieldset className="control-panel session-panel">
-      <legend>Session Volume Profile</legend>
-      <label className="switch-row"><span>Show profile</span><input type="checkbox" checked={showProfile} onChange={(event) => onShowProfileChange(event.target.checked)} /><span className="switch" aria-hidden="true" /></label>
-      <label className="select-row"><span>Session</span><select value={profileSession} onChange={(event) => onProfileSessionChange(event.target.value as ProfileSession)}>
-        {Object.entries(PROFILE_SESSIONS).map(([id, session]) => <option key={id} value={id}>{session.label}</option>)}
-      </select></label>
-      <label className="select-row"><span>Day</span><select value={profileDay} onChange={(event) => onProfileDayChange(event.target.value as ProfileDay)}>
-        <option value="TODAY">Today</option>
-        <option value="YESTERDAY">Yesterday</option>
-      </select></label>
-    </fieldset>
+    <div className="control-panel session-panel">
+      <Label className="panel-label">Session Volume Profile</Label>
+      <label className="switch-row"><span>Show profile</span><Switch checked={showProfile} onCheckedChange={onShowProfileChange} /></label>
+      <div className="select-row"><Label htmlFor="profile-session">Session</Label><Select value={profileSession} onValueChange={(value) => onProfileSessionChange(value as ProfileSession)}>
+        <SelectTrigger id="profile-session" aria-label="Session"><SelectValue /></SelectTrigger>
+        <SelectContent>{Object.entries(PROFILE_SESSIONS).map(([id, session]) => <SelectItem key={id} value={id}>{session.label}</SelectItem>)}</SelectContent>
+      </Select></div>
+      <div className="select-row"><Label htmlFor="profile-day">Day</Label><Select value={profileDay} onValueChange={(value) => onProfileDayChange(value as ProfileDay)}>
+        <SelectTrigger id="profile-day" aria-label="Day"><SelectValue /></SelectTrigger>
+        <SelectContent><SelectItem value="TODAY">Today</SelectItem><SelectItem value="YESTERDAY">Yesterday</SelectItem></SelectContent>
+      </Select></div>
+    </div>
   );
 }

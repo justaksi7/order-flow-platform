@@ -1,5 +1,7 @@
 import type { TimeFrame } from "@orderflow/domain";
 import type { OrderFlowDisplayMode } from "../charts/OrderFlowDisplayMode";
+import { Label } from "./ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 
 type ChartControlsProps = {
   readonly timeFrames: readonly TimeFrame[];
@@ -18,18 +20,20 @@ const DISPLAY_MODES: readonly { value: OrderFlowDisplayMode; label: string }[] =
 export function ChartControls({ timeFrames, selectedTimeFrame, onTimeFrameChange, displayMode, onDisplayModeChange }: ChartControlsProps) {
   return (
     <div className="chart-controls compact-controls">
-      <label className="toolbar-field">
-        <span className="control-label">Timeframe</span>
-        <select value={selectedTimeFrame} onChange={(event) => onTimeFrameChange(event.target.value as TimeFrame)}>
-          {timeFrames.map((timeFrame) => <option key={timeFrame} value={timeFrame}>{timeFrame}</option>)}
-        </select>
-      </label>
-      <label className="toolbar-field chart-type-field">
-        <span className="control-label">Chart type</span>
-        <select value={displayMode} onChange={(event) => onDisplayModeChange(event.target.value as OrderFlowDisplayMode)}>
-          {DISPLAY_MODES.map((mode) => <option key={mode.value} value={mode.value}>{mode.label}</option>)}
-        </select>
-      </label>
+      <div className="toolbar-field">
+        <Label>Timeframe</Label>
+        <Select value={selectedTimeFrame} onValueChange={(value) => onTimeFrameChange(value as TimeFrame)}>
+          <SelectTrigger aria-label="Timeframe"><SelectValue /></SelectTrigger>
+          <SelectContent>{timeFrames.map((timeFrame) => <SelectItem key={timeFrame} value={timeFrame}>{timeFrame}</SelectItem>)}</SelectContent>
+        </Select>
+      </div>
+      <div className="toolbar-field chart-type-field">
+        <Label>Chart type</Label>
+        <Select value={displayMode} onValueChange={(value) => onDisplayModeChange(value as OrderFlowDisplayMode)}>
+          <SelectTrigger aria-label="Chart type"><SelectValue /></SelectTrigger>
+          <SelectContent>{DISPLAY_MODES.map((mode) => <SelectItem key={mode.value} value={mode.value}>{mode.label}</SelectItem>)}</SelectContent>
+        </Select>
+      </div>
     </div>
   );
 }

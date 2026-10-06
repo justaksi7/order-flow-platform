@@ -38,8 +38,27 @@ export function createVolumeProfileData(
     return null;
   }
 
+  const priceStepCounts = new Map<number, number>();
+  for (const candle of usableCandles) {
+    priceStepCounts.set(
+      candle.priceStep,
+      (priceStepCounts.get(candle.priceStep) ?? 0) + 1
+    );
+  }
+
+  const priceStep = [...priceStepCounts.entries()]
+    .sort((first, second) => second[1] - first[1])[0]?.[0];
+
+  if (priceStep === undefined) {
+    return null;
+  }
+
+  const consistentCandles = usableCandles.filter(
+    (candle) => candle.priceStep === priceStep
+  );
+
   const footprintCandles =
-    usableCandles.map(
+    consistentCandles.map(
       deserializeFootprintCandle
     );
 
@@ -81,18 +100,6 @@ export function createVolumeProfileData(
 
   if (!firstCandle) {
     return null;
-  }
-
-  for (const candle of footprintCandles) {
-    if (
-      candle.priceStep !==
-      firstCandle.priceStep
-    ) {
-      throw new Error(
-        "Volume Profile candles must use " +
-        "the same priceStep"
-      );
-    }
   }
 
   return {

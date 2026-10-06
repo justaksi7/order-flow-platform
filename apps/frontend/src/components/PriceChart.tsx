@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { CandlestickData, IChartApi, IPriceLine, ISeriesApi, MouseEventParams, Time, UTCTimestamp, WhitespaceData } from "lightweight-charts";
-import { CandlestickSeries, ColorType, createChart, HistogramSeries, LineSeries, LineStyle } from "lightweight-charts";
+import type { CandlestickData, IChartApi, IPriceLine, ISeriesApi, MouseEventParams, TickMarkType, Time, UTCTimestamp, WhitespaceData } from "lightweight-charts";
+import { CandlestickSeries, ColorType, createChart, CrosshairMode, HistogramSeries, LineSeries, LineStyle } from "lightweight-charts";
 import type { ServerMessage } from "@orderflow/protocol";
 import { toDeltaHistogramSeriesData } from "../charts/cumulativeDelta/toDeltaHistogramSeriesData";
 import { FootprintSeries } from "../charts/footprint/FootprintSeries";
@@ -15,6 +15,8 @@ import type { OrderFlowDisplayMode } from "../charts/OrderFlowDisplayMode";
 import type { DrawingPoint, RectangleDrawing } from "../charts/drawings/ChartDrawing";
 import { DrawingPrimitive } from "../charts/drawings/DrawingPrimitive";
 import type { SessionVwapData } from "../charts/vwap/toSessionVwapData";
+import { Button } from "./ui/button";
+import { useTheme } from "./ThemeProvider";
 type SnapshotMessage = Extract<ServerMessage, {
   type: "SNAPSHOT";
 }>;
@@ -44,7 +46,43 @@ function toCandlestickData(candle: SerializedCandle): CandlestickData<Time> {
     close: candle.close
   };
 }
+
+function toDate(time: Time): Date {
+  if (typeof time === "number") {
+    return new Date(time * 1_000);
+  }
+
+  if (typeof time === "string") {
+    return new Date(time);
+  }
+
+  return new Date(Date.UTC(
+    time.year,
+    time.month - 1,
+    time.day
+  ));
+}
+
+function formatBrowserTime(time: Time, locale?: string): string {
+  return new Intl.DateTimeFormat(locale, {
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23"
+  }).format(toDate(time));
+}
+
+function formatBrowserTick(time: Time, locale?: string): string {
+  return new Intl.DateTimeFormat(locale, {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23"
+  }).format(toDate(time));
+}
+
 export function PriceChart({ candles, currentCandle, displayMode, vwapSessions, showVwap, showVolume, showCvd, showDelta, sessionProfile }: PriceChartProps) {
+  const { theme } = useTheme();
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const vwapSeriesRef = useRef(new Map<number, ISeriesApi<"Line">>());
@@ -99,29 +137,41 @@ export function PriceChart({ candles, currentCandle, displayMode, vwapSessions, 
       layout: {
         background: {
           type: ColorType.Solid,
-          color: "#0f172a"
+          color: theme === "light" ? "#e8edf2" : "#0f172a"
         },
-        textColor: "#cbd5e1"
+        textColor: theme === "light" ? "#4b5b6b" : "#cbd5e1"
       },
       grid: {
         vertLines: {
-          color: "#1e293b"
+          color: theme === "light" ? "#cfd8e1" : "#1e293b"
         },
         horzLines: {
-          color: "#1e293b"
+          color: theme === "light" ? "#cfd8e1" : "#1e293b"
         }
+      },
+      crosshair: {
+        mode: CrosshairMode.Normal
+      },
+      localization: {
+        timeFormatter: (time: Time) => formatBrowserTime(time),
       },
       timeScale: {
         timeVisible: true,
-        secondsVisible: false
+        secondsVisible: false,
+        shiftVisibleRangeOnNewBar: false,
+        tickMarkFormatter: (time: Time, _tickMarkType: TickMarkType, locale: string) =>
+          formatBrowserTick(time, locale)
       }
     });
     const series = chart.addSeries(CandlestickSeries, {
-      upColor: "#22c55e",
-      downColor: "#ef4444",
+      upColor: theme === "light" ? "#089981" : "#22c55e",
+      downColor: theme === "light" ? "#f23645" : "#ef4444",
       borderVisible: false,
-      wickUpColor: "#22c55e",
-      wickDownColor: "#ef4444"
+      wickUpColor: theme === "light" ? "#089981" : "#22c55e",
+      wickDownColor: theme === "light" ? "#f23645" : "#ef4444",
+      priceLineVisible: true,
+      priceLineColor: theme === "light" ? "#2962ff" : "#f8fafc",
+      lastValueVisible: true
     });
     function handleChartClick(parameter: MouseEventParams<Time>): void {
       if (!parameter.point ||
@@ -255,7 +305,7 @@ export function PriceChart({ candles, currentCandle, displayMode, vwapSessions, 
       volumeProfilePrimitiveRef.current =
         null;
     };
-  }, [selectDrawing, selectDrawingTool]);
+  }, [selectDrawing, selectDrawingTool, theme]);
   // Rebuild only optional lower panes when their selection changes.
   // Removing their series also removes empty panes; the price chart stays intact.
   useEffect(() => {
@@ -371,17 +421,20 @@ export function PriceChart({ candles, currentCandle, displayMode, vwapSessions, 
     const transparent = "rgba(0, 0, 0, 0)";
     series.applyOptions({
       visible: true,
+      priceLineVisible: true,
+      priceLineColor: theme === "light" ? "#2962ff" : "#f8fafc",
+      lastValueVisible: true,
       upColor: isNormal
-        ? "#22c55e"
+        ? theme === "light" ? "#089981" : "#22c55e"
         : transparent,
       downColor: isNormal
-        ? "#ef4444"
+        ? theme === "light" ? "#f23645" : "#ef4444"
         : transparent,
       wickUpColor: isNormal
-        ? "#22c55e"
+        ? theme === "light" ? "#089981" : "#22c55e"
         : transparent,
       wickDownColor: isNormal
-        ? "#ef4444"
+        ? theme === "light" ? "#f23645" : "#ef4444"
         : transparent
     });
     footprintSeries.applyOptions({
@@ -399,21 +452,27 @@ export function PriceChart({ candles, currentCandle, displayMode, vwapSessions, 
         });
       }
     }
-  }, [displayMode]);
+  }, [displayMode, theme]);
   useEffect(() => {
     const series = seriesRef.current;
     const footprintSeries = footprintSeriesRef.current;
     const candleVolumeProfileSeries = candleVolumeProfileSeriesRef.current;
+    const timeScale = chartRef.current?.timeScale();
     if (!series ||
       !footprintSeries ||
-      !candleVolumeProfileSeries) {
+      !candleVolumeProfileSeries ||
+      !timeScale) {
       return;
     }
+    const visibleLogicalRange = timeScale.getVisibleLogicalRange();
     const chartData = candles.map(toCandlestickData);
     const footprintData = candles.map(toFootprintSeriesData);
     series.setData(chartData);
     footprintSeries.setData(footprintData);
     candleVolumeProfileSeries.setData(footprintData);
+    if (visibleLogicalRange) {
+      timeScale.setVisibleLogicalRange(visibleLogicalRange);
+    }
     if (chartData.length > 0 &&
       !hasFittedContentRef.current) {
       chartRef.current
@@ -426,11 +485,16 @@ export function PriceChart({ candles, currentCandle, displayMode, vwapSessions, 
     if (!currentCandle) {
       return;
     }
+    const timeScale = chartRef.current?.timeScale();
+    const visibleLogicalRange = timeScale?.getVisibleLogicalRange();
     const footprintData = toFootprintSeriesData(currentCandle);
     seriesRef.current?.update(toCandlestickData(currentCandle));
     footprintSeriesRef.current?.update(footprintData);
     candleVolumeProfileSeriesRef.current
       ?.update(footprintData);
+    if (timeScale && visibleLogicalRange) {
+      timeScale.setVisibleLogicalRange(visibleLogicalRange);
+    }
   }, [currentCandle, candles]);
   useEffect(() => {
     const cumulativeDeltaSeries = cumulativeDeltaSeriesRef.current;
@@ -499,19 +563,19 @@ export function PriceChart({ candles, currentCandle, displayMode, vwapSessions, 
   return (<section className="price-chart-section">
     <div className="drawing-toolbar">
       <span className="toolbar-label">Draw</span>
-      <button type="button" aria-pressed={drawingTool ===
+      <Button size="sm" variant={drawingTool === "HORIZONTAL_LINE" ? "default" : "ghost"} aria-pressed={drawingTool ===
         "HORIZONTAL_LINE"} onClick={() => selectDrawingTool(drawingTool ===
           "HORIZONTAL_LINE"
           ? "CURSOR"
           : "HORIZONTAL_LINE")}>
         Horizontal line
-      </button>
-      <button type="button" aria-pressed={drawingTool === "RECTANGLE"} onClick={() => selectDrawingTool(drawingTool === "RECTANGLE" ? "CURSOR" : "RECTANGLE")}>
+      </Button>
+      <Button size="sm" variant={drawingTool === "RECTANGLE" ? "default" : "ghost"} aria-pressed={drawingTool === "RECTANGLE"} onClick={() => selectDrawingTool(drawingTool === "RECTANGLE" ? "CURSOR" : "RECTANGLE")}>
         Rectangle
-      </button>
-      <button type="button" disabled={selectedDrawingId === null} onClick={removeSelectedDrawing}>
+      </Button>
+      <Button size="sm" variant="destructive" disabled={selectedDrawingId === null} onClick={removeSelectedDrawing}>
         Delete selected
-      </button>
+      </Button>
     </div>
     <div ref={containerRef} className="price-chart" style={{
       cursor: drawingTool === "CURSOR"

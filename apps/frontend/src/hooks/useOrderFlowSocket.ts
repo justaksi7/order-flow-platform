@@ -198,6 +198,11 @@ export function useOrderFlowSocket(url: string) {
             return;
           }
 
+          if (message.status === "connected") {
+            historyStarted = false;
+            void loadHistory();
+          }
+
           updateState((previous) => ({
             ...previous,
             marketDataStatus: message.status

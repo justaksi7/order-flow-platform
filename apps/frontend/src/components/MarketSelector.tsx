@@ -9,13 +9,17 @@ type MarketSelectorProps = {
   readonly onMarketChange: (marketId: string) => void;
 };
 
+import { Label } from "./ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
+
 export function MarketSelector({ markets, selectedMarketId, onMarketChange }: MarketSelectorProps) {
   return (
-    <label className="toolbar-field">
-      <span className="control-label">Market</span>
-      <select value={selectedMarketId} onChange={(event) => onMarketChange(event.target.value)}>
-        {markets.map((market) => <option key={market.id} value={market.id}>{market.label}</option>)}
-      </select>
-    </label>
+    <div className="toolbar-field market-selector-field">
+      <Label>Market</Label>
+      <Select value={selectedMarketId} onValueChange={onMarketChange}>
+        <SelectTrigger aria-label="Market"><SelectValue /></SelectTrigger>
+        <SelectContent>{markets.map((market) => <SelectItem key={market.id} value={market.id}>{market.label}</SelectItem>)}</SelectContent>
+      </Select>
+    </div>
   );
 }

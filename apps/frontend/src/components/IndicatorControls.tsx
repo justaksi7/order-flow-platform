@@ -9,14 +9,17 @@ type IndicatorControlsProps = {
   readonly onShowDeltaChange: (value: boolean) => void;
 };
 
+import { Label } from "./ui/label";
+import { Switch } from "./ui/switch";
+
 export function IndicatorControls({ showVwap, showVolume, showCvd, showDelta, onShowVwapChange, onShowVolumeChange, onShowCvdChange, onShowDeltaChange }: IndicatorControlsProps) {
   return (
-    <fieldset className="control-panel indicator-panel">
-      <legend>Indicators</legend>
-      <label className="switch-row"><span>VWAP</span><input type="checkbox" checked={showVwap} onChange={(event) => onShowVwapChange(event.target.checked)} /><span className="switch" aria-hidden="true" /></label>
-      <label className="switch-row"><span>Volume</span><input type="checkbox" checked={showVolume} onChange={(event) => onShowVolumeChange(event.target.checked)} /><span className="switch" aria-hidden="true" /></label>
-      <label className="switch-row"><span>Cumulative delta</span><input type="checkbox" checked={showCvd} onChange={(event) => onShowCvdChange(event.target.checked)} /><span className="switch" aria-hidden="true" /></label>
-      <label className="switch-row"><span>Delta histogram</span><input type="checkbox" checked={showDelta} onChange={(event) => onShowDeltaChange(event.target.checked)} /><span className="switch" aria-hidden="true" /></label>
-    </fieldset>
+    <div className="control-panel indicator-panel">
+      <Label className="panel-label">Indicators</Label>
+      <label className="switch-row"><span>VWAP</span><Switch checked={showVwap} onCheckedChange={onShowVwapChange} /></label>
+      <label className="switch-row"><span>Volume</span><Switch checked={showVolume} onCheckedChange={onShowVolumeChange} /></label>
+      <label className="switch-row"><span>Cumulative delta</span><Switch checked={showCvd} onCheckedChange={onShowCvdChange} /></label>
+      <label className="switch-row"><span>Delta histogram</span><Switch checked={showDelta} onCheckedChange={onShowDeltaChange} /></label>
+    </div>
   );
 }
