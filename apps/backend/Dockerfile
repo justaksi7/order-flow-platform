@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 
-FROM node:22-alpine AS build
+FROM node:22.14-alpine AS build
 
 WORKDIR /app
 
@@ -42,7 +42,7 @@ RUN npm run build
 RUN npm prune --omit=dev
 
 
-FROM node:22-alpine AS runtime
+FROM node:22.14-alpine AS runtime
 
 WORKDIR /app
 
@@ -110,6 +110,8 @@ COPY --from=build \
   --chown=node:node \
   /app/packages/protocol/dist \
   ./packages/protocol/dist
+
+RUN mkdir -p /app/data && chown node:node /app/data
 
 USER node
 

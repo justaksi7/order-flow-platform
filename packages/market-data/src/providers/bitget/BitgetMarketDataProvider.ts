@@ -39,7 +39,8 @@ export class BitgetMarketDataProvider implements MarketDataProvider {
 
   public constructor(
     private readonly url = DEFAULT_URL,
-    private readonly onStatus?: (status: MarketDataStatus) => void
+    private readonly onStatus?: (status: MarketDataStatus) => void,
+    private readonly onError: (code: string) => void = code => console.error(JSON.stringify({ level: "error", code }))
   ) { }
 
   public connect(): Promise<void> {
@@ -67,7 +68,7 @@ export class BitgetMarketDataProvider implements MarketDataProvider {
 
       socket.once("open", () => {
         socket.off("error", rejectConnection);
-        socket.on("error", (error) => console.error("[Bitget] WebSocket error:", error.message));
+        socket.on("error", (error) => this.onError("BITGET_WEBSOCKET_ERROR"));
         socket.on("close", (code, reason) => this.handleClose(code, reason.toString()));
         socket.on("message", (raw) => this.handleMessage(raw));
         this.startHeartbeat();
@@ -221,9 +222,9 @@ export class BitgetMarketDataProvider implements MarketDataProvider {
       const message: unknown = JSON.parse(text);
       if (this.isEvent(message)) {
         if (message.event === "error") {
-          console.error(`[Bitget] ${message.code ?? "error"}: ${message.msg ?? "Unknown error"}`);
+          this.onError("BITGET_PROVIDER_ERROR");
         } else {
-          console.log(`[Bitget] ${message.event}: ${message.arg?.symbol ?? "unknown"}`);
+          console.log("[Bitget] subscription event");
         }
         return;
       }
@@ -248,7 +249,7 @@ export class BitgetMarketDataProvider implements MarketDataProvider {
         subscription.handler(trade);
       }
     } catch (error) {
-      console.error("[Bitget] Could not process message:", error);
+      this.onError("BITGET_MESSAGE_FAILED");
     }
   }
 
@@ -290,7 +291,7 @@ export class BitgetMarketDataProvider implements MarketDataProvider {
       }
 
       if (Date.now() - this.lastPongAt > HEARTBEAT_TIMEOUT_MS) {
-        console.error("[Bitget] Heartbeat timeout; reconnecting.");
+        this.onError("BITGET_HEARTBEAT_TIMEOUT");
         this.socket.terminate();
         return;
       }
@@ -306,7 +307,7 @@ export class BitgetMarketDataProvider implements MarketDataProvider {
 
   private handleClose(code: number, reason: string): void {
     this.stopHeartbeat();
-    console.log(`[Bitget] disconnected (${code}${reason ? `: ${reason}` : ""})`);
+    console.log("[Bitget] disconnected");
 
     if (this.isDisconnectRequested) {
       return;
@@ -334,7 +335,7 @@ export class BitgetMarketDataProvider implements MarketDataProvider {
       this.reconnectTimer = undefined;
 
       void this.connect().catch((error) => {
-        console.error("[Bitget] Reconnect failed:", error);
+        this.onError("BITGET_RECONNECT_FAILED");
         this.scheduleReconnect();
       });
     }, delay);

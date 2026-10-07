@@ -1,3 +1,5 @@
+import { Analytics } from "./analytics/Analytics.js";
+import { logError, startLogCleanup } from "./logging/logger.js";
 import type {
   FootprintCandle,
   Market,
@@ -151,7 +153,8 @@ const provider = new BitgetMarketDataProvider(
     if (status === "connected" && webSocketServer) {
       void recoverMarketData();
     }
-  }
+  },
+  logError
 );
 
 const candlePersistence = new CandleBufferPersistence(
@@ -459,7 +462,7 @@ async function recoverMarketData(): Promise<void> {
 
     broadcastMarketDataStatus("connected");
   } catch (error) {
-    console.error("Market-data gap recovery failed:", error);
+    logError("MARKET_DATA_RECOVERY_FAILED");
     broadcastMarketDataStatus("disconnected");
   } finally {
     for (const runtime of recoveringRuntimes) {
@@ -480,10 +483,7 @@ function handleCompletedCandle(
     runtime.market.id,
     runtime.candleBuffer.getAll()
   ).catch((error) => {
-    console.error(
-      `[${runtime.market.symbol}] Could not persist candle buffer:`,
-      error
-    );
+    logError("CANDLE_PERSISTENCE_FAILED");
   });
 
   if (!shouldBroadcast) {
@@ -561,10 +561,7 @@ async function closeConnections(
         await task.close();
         console.log(`${task.name} closed.`);
       } catch (error) {
-        console.error(
-          `Error while closing ${task.name}:`,
-          error
-        );
+        logError("SHUTDOWN_FAILED");
 
         process.exitCode = 1;
       }
@@ -590,7 +587,11 @@ async function main(): Promise<void> {
     );
   }
 
+  startLogCleanup();
+  const analytics = new Analytics();
+  process.once("exit", () => analytics.close());
   const app = createHttpApp({
+    analytics,
     getCandleBuffer: (marketId) =>
       runtimes.get(marketId)?.candleBuffer
   });
@@ -600,6 +601,7 @@ async function main(): Promise<void> {
 
   const socketServer = createWebSocketServer({
     httpServer: server,
+    analytics,
     defaultMarketId: DEFAULT_MARKET_ID,
 
     getMarketSnapshot: (marketId) => {
@@ -686,7 +688,7 @@ process.once("SIGTERM", () => {
 try {
   await main();
 } catch (error) {
-  console.error("Backend startup failed:", error);
+  logError("BACKEND_STARTUP_FAILED");
   process.exitCode = 1;
 
   await shutdown("Backend startup failed");

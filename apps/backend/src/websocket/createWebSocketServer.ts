@@ -1,3 +1,5 @@
+import type { Analytics } from "../analytics/Analytics.js";
+import { logError } from "../logging/logger.js";
 import {
   WebSocketServer
 } from "ws";
@@ -23,6 +25,7 @@ type MarketSnapshot = {
 
 type CreateWebSocketServerOptions = {
   readonly httpServer: HttpServer;
+  readonly analytics?: Analytics;
   readonly defaultMarketId: string;
 
   readonly getMarketSnapshot: (
@@ -33,6 +36,7 @@ type CreateWebSocketServerOptions = {
 
 export function createWebSocketServer({
   httpServer,
+  analytics,
   defaultMarketId,
   getMarketSnapshot
 }: CreateWebSocketServerOptions): WebSocketServer {
@@ -43,7 +47,7 @@ export function createWebSocketServer({
 
   server.on("connection", (socket, request) => {
     socket.on("error", (error) => {
-      console.error("WebSocket client error:", error);
+      logError("WEBSOCKET_CLIENT_ERROR");
     });
 
     let marketId: string;
@@ -69,6 +73,8 @@ export function createWebSocketServer({
       return;
     }
 
+    try { analytics?.record("websocket", "/ws"); }
+    catch { logError("ANALYTICS_WRITE_FAILED"); }
     registerClientMarket(socket, marketId);
 
     const connectedMessage: ConnectedMessage = {
@@ -85,15 +91,7 @@ export function createWebSocketServer({
       );
     }
 
-    console.log(
-      `WebSocket client connected: ${marketId}`
-    );
 
-    socket.on("close", () => {
-      console.log(
-        `WebSocket client disconnected: ${marketId}`
-      );
-    });
   });
 
   return server;

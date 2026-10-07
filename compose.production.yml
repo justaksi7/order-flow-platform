@@ -3,6 +3,18 @@ services:
     image: ghcr.io/justaksi7/tickweave-backend:0.1.0
 
     restart: unless-stopped
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    environment:
+      ANALYTICS_DB_PATH: /app/data/analytics.sqlite
+      ERROR_LOG_DIR: /app/data/errors
+      ANALYTICS_ADMIN_TOKEN: ${ANALYTICS_ADMIN_TOKEN:?Set a random admin token of at least 32 characters}
+    volumes:
+      - analytics-data:/app/data
 
     expose:
       - "8080"
@@ -11,6 +23,11 @@ services:
     image: ghcr.io/justaksi7/tickweave-frontend:0.1.0
 
     restart: unless-stopped
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "3"
 
     ports:
       - "80:80"
@@ -18,3 +35,5 @@ services:
     depends_on:
       backend:
         condition: service_healthy
+volumes:
+  analytics-data:
